@@ -132,12 +132,15 @@ class HomeScreen extends ConsumerWidget {
           child: CupertinoButton(
             color: CupertinoColors.activeBlue,
             padding: const EdgeInsets.symmetric(vertical: 12),
-            child: const Row(
+            child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(CupertinoIcons.qrcode, size: 20),
+              children: const [
+                Icon(CupertinoIcons.qrcode, size: 20, color: CupertinoColors.white),
                 SizedBox(width: 8),
-                Text('Pair Device'),
+                Text(
+                  'Pair Device',
+                  style: TextStyle(color: CupertinoColors.white, fontWeight: FontWeight.w600),
+                ),
               ],
             ),
             onPressed: () {
@@ -152,14 +155,14 @@ class HomeScreen extends ConsumerWidget {
           child: CupertinoButton(
             color: CupertinoColors.systemGrey5,
             padding: const EdgeInsets.symmetric(vertical: 12),
-            child: const Row(
+            child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
-              children: [
+              children: const [
                 Icon(CupertinoIcons.clock, size: 20, color: CupertinoColors.activeBlue),
                 SizedBox(width: 8),
                 Text(
                   'History',
-                  style: TextStyle(color: CupertinoColors.activeBlue),
+                  style: TextStyle(color: CupertinoColors.activeBlue, fontWeight: FontWeight.w600),
                 ),
               ],
             ),
@@ -278,7 +281,7 @@ class HomeScreen extends ConsumerWidget {
                 trailing: CupertinoButton(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                   color: CupertinoColors.activeBlue,
-                  child: const Text('Pair', style: TextStyle(fontSize: 13)),
+                  child: const Text('Pair', style: TextStyle(fontSize: 13, color: CupertinoColors.white)),
                   onPressed: () {
                     Navigator.of(context).push(
                       CupertinoPageRoute(builder: (context) => const PairingScreen()),

@@ -32,9 +32,6 @@ void main() async {
     windowManager.waitUntilReadyToShow(windowOptions, () async {
       await windowManager.show();
       await windowManager.focus();
-      if (Platform.isWindows) {
-        await windowManager.setPreventClose(true);
-      }
     });
   }
 
@@ -51,8 +48,13 @@ void main() async {
   );
 
   // Start all real-time background services (mDNS, SyncServer, SyncClient, ClipboardMonitor)
-  final app = container.read(appProvider);
-  await app.start();
+  // Wrap in try-catch so startup errors don't crash the app
+  try {
+    final app = container.read(appProvider);
+    await app.start();
+  } catch (e) {
+    debugPrint('Error starting background services: $e');
+  }
 
   runApp(
     UncontrolledProviderScope(
