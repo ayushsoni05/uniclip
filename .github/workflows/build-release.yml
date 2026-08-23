@@ -99,24 +99,24 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name || 'v1.0.0' }}
-          name: UniClip ${{ github.ref_name || 'v1.0.0' }} - Cross-Platform Universal Clipboard
+          tag_name: v1.0.0
+          name: UniClip v1.0.0 - Cross-Platform Universal Clipboard
           body: |
             ## 🎉 UniClip v1.0.0 Release
-            
+
             Instant, cross-platform clipboard synchronization like Apple's iOS Universal Clipboard for Android and Windows.
-            
+
             ### 📥 Direct Downloads:
-            * 📱 **Android**: Download `UniClip-Android.apk` below and install directly.
-            * 💻 **Windows**: Download `UniClip-Windows.zip` below, extract, and launch `global_clipboard.exe`.
-            
+            * 📱 **Android**: Download `app-release.apk` (or `UniClip-v1.0.0-Android.apk`) below and install directly.
+            * 💻 **Windows**: Download `UniClip-v1.0.0-Windows.zip` below, extract, and launch `global_clipboard.exe`.
+
             ### ✨ Features:
             * Zero-configuration LAN mDNS / Bonjour sync
             * AES-256-GCM End-to-End Encryption
             * Pixel-perfect iOS 17 Cupertino design with "Pasting from..." dropdown banner
             * QR code pairing & full clipboard history
           files: |
-            release-assets/android/app-release.apk
-            release-assets/windows/UniClip-v1.0.0-Windows.zip
+            release-assets/android/*
+            release-assets/windows/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
