@@ -1,6 +1,22 @@
 # UniClip (Global Clipboard) 📋✨
 
+[![Build & Release UniClip](https://github.com/ayushsoni05/uniclip/actions/workflows/build-release.yml/badge.svg)](https://github.com/ayushsoni05/uniclip/actions/workflows/build-release.yml)
+[![GitHub Release](https://img.shields.io/github/v/release/ayushsoni05/uniclip?color=blue&label=Latest%20Release)](https://github.com/ayushsoni05/uniclip/releases/latest)
+[![Platform - Android](https://img.shields.io/badge/Platform-Android-3DDC84?logo=android&logoColor=white)](https://github.com/ayushsoni05/uniclip/releases/latest)
+[![Platform - Windows](https://img.shields.io/badge/Platform-Windows-0078D6?logo=windows&logoColor=white)](https://github.com/ayushsoni05/uniclip/releases/latest)
+[![Platform - Web](https://img.shields.io/badge/Platform-Web-FF6F00?logo=googlechrome&logoColor=white)](https://github.com/ayushsoni05/uniclip)
+
 > **Seamless, real-time, cross-platform clipboard synchronization like Apple's iOS Universal Clipboard — built for Android, Windows, and Web with end-to-end encryption.**
+
+---
+
+## 📥 Direct Downloads
+
+| Platform | Download Link | Instructions |
+| :--- | :--- | :--- |
+| 📱 **Android** | [**Download APK (`UniClip-v1.0.0-Android.apk`)**](https://github.com/ayushsoni05/uniclip/releases/latest) | Download to your Android phone & tap to install |
+| 💻 **Windows** | [**Download Windows Release (`UniClip-v1.0.0-Windows.zip`)**](https://github.com/ayushsoni05/uniclip/releases/latest) | Extract zip and double-click `global_clipboard.exe` |
+| 🌐 **Web** | [**Live Web App**](http://localhost:8080) | Open directly in any modern browser |
 
 ---
 
@@ -102,14 +118,8 @@ lib/
 
 ---
 
-## 🛠️ Getting Started
+## 🛠️ Building From Source
 
-### Prerequisites
-* Flutter SDK (3.29.0 or higher)
-* Dart SDK (3.7.1 or higher)
-* Java 17 (for Android builds)
-
-### Installation
 ```bash
 # Clone the repository
 git clone https://github.com/ayushsoni05/uniclip.git
@@ -117,29 +127,15 @@ cd uniclip
 
 # Install dependencies
 flutter pub get
-```
 
-### Running on Windows
-```bash
-# Make sure Developer Mode is enabled in Windows Settings
+# Run on Android
+flutter run -d <android-device-id>
+
+# Run on Windows
 flutter run -d windows
-```
 
-### Running on Android
-```bash
-# Connect device with USB Debugging enabled
-flutter run
-```
-
-### Running on Web
-```bash
+# Run on Web
 flutter run -d chrome --web-port 8080
-```
-
-### Running Tests
-```bash
-flutter test
-flutter analyze
 ```
 
 ---
