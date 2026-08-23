@@ -129,17 +129,20 @@ class HomeScreen extends ConsumerWidget {
     return Row(
       children: [
         Expanded(
-          child: CupertinoButton(
-            color: CupertinoColors.activeBlue,
+          child: CupertinoButton.filled(
             padding: const EdgeInsets.symmetric(vertical: 12),
-            child: Row(
+            child: const Row(
               mainAxisAlignment: MainAxisAlignment.center,
-              children: const [
+              children: [
                 Icon(CupertinoIcons.qrcode, size: 20, color: CupertinoColors.white),
                 SizedBox(width: 8),
                 Text(
                   'Pair Device',
-                  style: TextStyle(color: CupertinoColors.white, fontWeight: FontWeight.w600),
+                  style: TextStyle(
+                    color: CupertinoColors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ],
             ),
@@ -155,14 +158,18 @@ class HomeScreen extends ConsumerWidget {
           child: CupertinoButton(
             color: CupertinoColors.systemGrey5,
             padding: const EdgeInsets.symmetric(vertical: 12),
-            child: Row(
+            child: const Row(
               mainAxisAlignment: MainAxisAlignment.center,
-              children: const [
+              children: [
                 Icon(CupertinoIcons.clock, size: 20, color: CupertinoColors.activeBlue),
                 SizedBox(width: 8),
                 Text(
                   'History',
-                  style: TextStyle(color: CupertinoColors.activeBlue, fontWeight: FontWeight.w600),
+                  style: TextStyle(
+                    color: CupertinoColors.activeBlue,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ],
             ),
@@ -278,10 +285,12 @@ class HomeScreen extends ConsumerWidget {
                   CupertinoIcons.radiowaves_right,
                   color: CupertinoColors.activeOrange,
                 ),
-                trailing: CupertinoButton(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                  color: CupertinoColors.activeBlue,
-                  child: const Text('Pair', style: TextStyle(fontSize: 13, color: CupertinoColors.white)),
+                trailing: CupertinoButton.filled(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                  child: const Text(
+                    'Pair',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: CupertinoColors.white),
+                  ),
                   onPressed: () {
                     Navigator.of(context).push(
                       CupertinoPageRoute(builder: (context) => const PairingScreen()),

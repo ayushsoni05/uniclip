@@ -85,9 +85,9 @@ class PairingService {
   /// storing it, and creating a [PairedDevice] record.
   Future<PairedDevice> completePairing(PairingInfo info) async {
     try {
-      // Generate salt and derive an encryption key from the shared secret
+      // Generate salt and derive an encryption key from the shared secret asynchronously
       final salt = _keyManager.generateSalt();
-      final key = _keyManager.deriveKey(info.sharedSecret, salt);
+      final key = await _keyManager.deriveKeyAsync(info.sharedSecret, salt);
       
       // Store the derived key securely
       await _keyManager.storeKey(info.deviceId, key);

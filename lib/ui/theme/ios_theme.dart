@@ -43,10 +43,15 @@ class IOSTheme {
   static CupertinoThemeData get theme => const CupertinoThemeData(
     brightness: Brightness.light,
     primaryColor: systemBlue,
+    primaryContrastingColor: CupertinoColors.white,
     scaffoldBackgroundColor: systemGroupedBackground,
     barBackgroundColor: Color(0xF0F9F9F9), // Translucent nav bar
     textTheme: CupertinoTextThemeData(
       primaryColor: systemBlue,
+      actionTextStyle: TextStyle(
+        color: systemBlue,
+        fontSize: 17.0,
+      ),
     ),
   );
 }

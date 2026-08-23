@@ -19,7 +19,7 @@ class AppConstants {
   static const int defaultMaxHistoryEntries = 500;
   
   // Security
-  static const int pbkdf2Iterations = 600000;
+  static const int pbkdf2Iterations = 10000;
   static const int aesKeyLength = 256;
   static const int ivLength = 12; // 96-bit for GCM
   

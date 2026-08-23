@@ -1,11 +1,22 @@
 import 'dart:convert';
 import 'dart:math';
-import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:pointycastle/export.dart';
 
-// Ensure this path matches your project structure, or adjust as needed.
-// import '../core/constants.dart';
+import '../core/constants.dart';
+
+/// Top-level function for background isolate execution of PBKDF2
+Uint8List _pbkdf2Compute(Map<String, dynamic> params) {
+  final passphrase = params['passphrase'] as String;
+  final salt = params['salt'] as Uint8List;
+  final iterations = params['iterations'] as int;
+
+  final derivator = PBKDF2KeyDerivator(HMac(SHA256Digest(), 64))
+    ..init(Pbkdf2Parameters(salt, iterations, 32));
+
+  return derivator.process(Uint8List.fromList(utf8.encode(passphrase)));
+}
 
 /// Key manager for securely deriving, storing, retrieving, and deleting keys.
 class KeyManager {
@@ -35,12 +46,25 @@ class KeyManager {
     return seed;
   }
 
-  /// Derives a 256-bit (32-byte) key using PBKDF2-HMAC-SHA256 with 600,000 iterations.
+  /// Derives a 256-bit (32-byte) key using PBKDF2-HMAC-SHA256 synchronously.
   List<int> deriveKey(String passphrase, List<int> salt) {
     final derivator = PBKDF2KeyDerivator(HMac(SHA256Digest(), 64))
-      ..init(Pbkdf2Parameters(Uint8List.fromList(salt), 600000, 32));
-    
+      ..init(Pbkdf2Parameters(
+        Uint8List.fromList(salt),
+        AppConstants.pbkdf2Iterations,
+        32,
+      ));
+
     return derivator.process(Uint8List.fromList(utf8.encode(passphrase)));
+  }
+
+  /// Derives a 256-bit key in a background isolate to keep UI 60fps smooth.
+  Future<List<int>> deriveKeyAsync(String passphrase, List<int> salt) async {
+    return compute(_pbkdf2Compute, {
+      'passphrase': passphrase,
+      'salt': Uint8List.fromList(salt),
+      'iterations': AppConstants.pbkdf2Iterations,
+    });
   }
 
   /// Stores a key securely using `flutter_secure_storage`.

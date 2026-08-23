@@ -19,8 +19,47 @@ class PairingScreen extends ConsumerStatefulWidget {
 class _PairingScreenState extends ConsumerState<PairingScreen> {
   int _segmentedControlValue = 0;
   bool _isPaired = false;
+  bool _isProcessing = false;
   String _pairedDeviceName = '';
   String? _errorMessage;
+
+  MobileScannerController? _scannerController;
+
+  @override
+  void initState() {
+    super.initState();
+    if (!kIsWeb) {
+      _scannerController = MobileScannerController(
+        detectionSpeed: DetectionSpeed.noDuplicates,
+        facing: CameraFacing.back,
+        autoStart: false,
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _scannerController?.dispose();
+    super.dispose();
+  }
+
+  void _onTabChanged(int? value) {
+    if (value != null) {
+      setState(() {
+        _segmentedControlValue = value;
+        _errorMessage = null;
+        _isProcessing = false;
+      });
+
+      if (!kIsWeb) {
+        if (value == 1 && !_isPaired) {
+          _scannerController?.start();
+        } else {
+          _scannerController?.stop();
+        }
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -60,14 +99,7 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
                       child: Text('Scan QR Code'),
                     ),
                   },
-                  onValueChanged: (value) {
-                    if (value != null) {
-                      setState(() {
-                        _segmentedControlValue = value;
-                        _errorMessage = null;
-                      });
-                    }
-                  },
+                  onValueChanged: _onTabChanged,
                 ),
               ),
             ),
@@ -165,10 +197,44 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
                 textAlign: TextAlign.center,
                 style: TextStyle(color: CupertinoColors.secondaryLabel),
               ),
-              if (_errorMessage != null) ...[
-                const SizedBox(height: 16),
-                Text(_errorMessage!, style: const TextStyle(color: CupertinoColors.destructiveRed)),
-              ],
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (_errorMessage != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(
+                CupertinoIcons.exclamationmark_circle,
+                size: 56,
+                color: CupertinoColors.systemRed,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                _errorMessage!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 15,
+                  color: CupertinoColors.secondaryLabel,
+                ),
+              ),
+              const SizedBox(height: 24),
+              CupertinoButton.filled(
+                child: const Text('Try Again', style: TextStyle(color: CupertinoColors.white)),
+                onPressed: () {
+                  setState(() {
+                    _errorMessage = null;
+                    _isProcessing = false;
+                  });
+                  _scannerController?.start();
+                },
+              ),
             ],
           ),
         ),
@@ -183,10 +249,12 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
           alignment: Alignment.center,
           children: [
             MobileScanner(
+              controller: _scannerController,
               onDetect: (capture) {
+                if (_isProcessing) return;
                 final barcodes = capture.barcodes;
                 for (final barcode in barcodes) {
-                  if (barcode.rawValue != null) {
+                  if (barcode.rawValue != null && barcode.rawValue!.isNotEmpty) {
                     _processScannedData(barcode.rawValue!);
                     break;
                   }
@@ -201,17 +269,31 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
               width: 240,
               height: 240,
             ),
-            const Positioned(
+            Positioned(
               bottom: 30,
-              child: Text(
-                'Align QR code within the frame',
-                style: TextStyle(
-                  color: CupertinoColors.white,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0x99000000),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: const Text(
+                  'Align QR code within the frame',
+                  style: TextStyle(
+                    color: CupertinoColors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ),
+            if (_isProcessing)
+              Container(
+                color: const Color(0x80000000),
+                child: const Center(
+                  child: CupertinoActivityIndicator(radius: 16, color: CupertinoColors.white),
+                ),
+              ),
           ],
         ),
       ),
@@ -219,6 +301,14 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
   }
 
   Future<void> _processScannedData(String rawData) async {
+    if (_isProcessing) return;
+    setState(() {
+      _isProcessing = true;
+    });
+
+    // Stop camera capture immediately so no more frames are processed
+    await _scannerController?.stop();
+
     try {
       final pairingService = ref.read(pairingServiceProvider);
       final pairingInfo = pairingService.parsePairingPayload(rawData);
@@ -226,14 +316,20 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
 
       ref.read(pairedDevicesProvider.notifier).addDevice(pairedDevice);
 
-      setState(() {
-        _isPaired = true;
-        _pairedDeviceName = pairedDevice.deviceName;
-      });
+      if (mounted) {
+        setState(() {
+          _isPaired = true;
+          _isProcessing = false;
+          _pairedDeviceName = pairedDevice.deviceName;
+        });
+      }
     } catch (e) {
-      setState(() {
-        _errorMessage = 'Invalid QR code: $e';
-      });
+      if (mounted) {
+        setState(() {
+          _isProcessing = false;
+          _errorMessage = 'Invalid QR code. Please try again.';
+        });
+      }
     }
   }
 
@@ -272,7 +368,7 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
           ),
           const SizedBox(height: 32),
           CupertinoButton.filled(
-            child: const Text('Done'),
+            child: const Text('Done', style: TextStyle(color: CupertinoColors.white)),
             onPressed: () {
               Navigator.of(context).pop();
             },
