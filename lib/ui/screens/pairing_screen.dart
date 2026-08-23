@@ -1,0 +1,284 @@
+import 'dart:io';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/cupertino.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:qr_flutter/qr_flutter.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
+import '../../providers/clipboard_providers.dart';
+import '../../providers/device_providers.dart';
+import '../../core/config.dart';
+
+/// Pairing screen for scanning and displaying QR codes in real-time.
+class PairingScreen extends ConsumerStatefulWidget {
+  const PairingScreen({super.key});
+
+  @override
+  ConsumerState<PairingScreen> createState() => _PairingScreenState();
+}
+
+class _PairingScreenState extends ConsumerState<PairingScreen> {
+  int _segmentedControlValue = 0;
+  bool _isPaired = false;
+  String _pairedDeviceName = '';
+  String? _errorMessage;
+
+  @override
+  Widget build(BuildContext context) {
+    final config = ref.watch(configProvider);
+    final pairingService = ref.watch(pairingServiceProvider);
+
+    final qrPayload = pairingService.generatePairingPayload(
+      config.deviceId ?? 'device-id',
+      config.deviceName ?? 'Global Clipboard',
+      config.port,
+      kIsWeb ? '127.0.0.1' : (Platform.localHostname),
+    );
+
+    return CupertinoPageScaffold(
+      backgroundColor: CupertinoColors.systemGroupedBackground,
+      navigationBar: const CupertinoNavigationBar(
+        middle: Text('Pair Device'),
+        previousPageTitle: 'Back',
+      ),
+      child: SafeArea(
+        child: Column(
+          children: [
+            const SizedBox(height: 16),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0),
+              child: SizedBox(
+                width: double.infinity,
+                child: CupertinoSlidingSegmentedControl<int>(
+                  groupValue: _segmentedControlValue,
+                  children: const {
+                    0: Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 20),
+                      child: Text('Show QR Code'),
+                    ),
+                    1: Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 20),
+                      child: Text('Scan QR Code'),
+                    ),
+                  },
+                  onValueChanged: (value) {
+                    if (value != null) {
+                      setState(() {
+                        _segmentedControlValue = value;
+                        _errorMessage = null;
+                      });
+                    }
+                  },
+                ),
+              ),
+            ),
+            const SizedBox(height: 32),
+            Expanded(
+              child: _isPaired
+                  ? _buildSuccessView()
+                  : (_segmentedControlValue == 0
+                      ? _buildShowQrView(config, qrPayload)
+                      : _buildScanQrView()),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildShowQrView(Config config, String qrPayload) {
+    return SingleChildScrollView(
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(24.0),
+                decoration: BoxDecoration(
+                  color: CupertinoColors.white,
+                  borderRadius: BorderRadius.circular(20.0),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x15000000),
+                      blurRadius: 20.0,
+                      offset: Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: QrImageView(
+                  data: qrPayload,
+                  version: QrVersions.auto,
+                  size: 220.0,
+                  eyeStyle: const QrEyeStyle(
+                    eyeShape: QrEyeShape.square,
+                    color: CupertinoColors.black,
+                  ),
+                  dataModuleStyle: const QrDataModuleStyle(
+                    dataModuleShape: QrDataModuleShape.square,
+                    color: CupertinoColors.black,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+              Text(
+                config.deviceName ?? 'This Device',
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Scan this QR code from your other device\nto establish an end-to-end encrypted connection.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: CupertinoColors.secondaryLabel,
+                  fontSize: 14,
+                  height: 1.4,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildScanQrView() {
+    if (kIsWeb) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(CupertinoIcons.camera, size: 64, color: CupertinoColors.systemGrey),
+              const SizedBox(height: 16),
+              const Text(
+                'QR Scanner available on Android & Windows',
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'On other devices, open Global Clipboard and scan this device\'s QR code.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: CupertinoColors.secondaryLabel),
+              ),
+              if (_errorMessage != null) ...[
+                const SizedBox(height: 16),
+                Text(_errorMessage!, style: const TextStyle(color: CupertinoColors.destructiveRed)),
+              ],
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24.0),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24.0),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            MobileScanner(
+              onDetect: (capture) {
+                final barcodes = capture.barcodes;
+                for (final barcode in barcodes) {
+                  if (barcode.rawValue != null) {
+                    _processScannedData(barcode.rawValue!);
+                    break;
+                  }
+                }
+              },
+            ),
+            Container(
+              decoration: BoxDecoration(
+                border: Border.all(color: CupertinoColors.activeBlue, width: 3),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              width: 240,
+              height: 240,
+            ),
+            const Positioned(
+              bottom: 30,
+              child: Text(
+                'Align QR code within the frame',
+                style: TextStyle(
+                  color: CupertinoColors.white,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _processScannedData(String rawData) async {
+    try {
+      final pairingService = ref.read(pairingServiceProvider);
+      final pairingInfo = pairingService.parsePairingPayload(rawData);
+      final pairedDevice = await pairingService.completePairing(pairingInfo);
+
+      ref.read(pairedDevicesProvider.notifier).addDevice(pairedDevice);
+
+      setState(() {
+        _isPaired = true;
+        _pairedDeviceName = pairedDevice.deviceName;
+      });
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'Invalid QR code: $e';
+      });
+    }
+  }
+
+  Widget _buildSuccessView() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(24.0),
+            decoration: const BoxDecoration(
+              color: CupertinoColors.activeGreen,
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              CupertinoIcons.check_mark,
+              size: 48,
+              color: CupertinoColors.white,
+            ),
+          ),
+          const SizedBox(height: 24),
+          Text(
+            'Paired with $_pairedDeviceName!',
+            style: const TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Your clipboards are now synced in real time.',
+            style: TextStyle(
+              color: CupertinoColors.secondaryLabel,
+              fontSize: 15,
+            ),
+          ),
+          const SizedBox(height: 32),
+          CupertinoButton.filled(
+            child: const Text('Done'),
+            onPressed: () {
+              Navigator.of(context).pop();
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
