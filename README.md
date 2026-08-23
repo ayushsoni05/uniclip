@@ -14,8 +14,8 @@
 
 | Platform | Download Link | Instructions |
 | :--- | :--- | :--- |
-| 📱 **Android** | [**Download APK (`UniClip-v1.0.0-Android.apk`)**](https://github.com/ayushsoni05/uniclip/releases/latest) | Download to your Android phone & tap to install |
-| 💻 **Windows** | [**Download Windows Release (`UniClip-v1.0.0-Windows.zip`)**](https://github.com/ayushsoni05/uniclip/releases/latest) | Extract zip and double-click `global_clipboard.exe` |
+| 💻 **Windows** | [**Download Windows ZIP (`UniClip-v1.0.0-Windows.zip`)**](https://github.com/ayushsoni05/uniclip/releases/download/v1.0.0/UniClip-v1.0.0-Windows.zip) | Extract zip and double-click `global_clipboard.exe` |
+| 📱 **Android** | [**Download Android APK (`app-release.apk`)**](https://github.com/ayushsoni05/uniclip/releases/download/v1.0.0/app-release.apk) | Download to your Android phone & tap to install |
 | 🌐 **Web** | [**Live Web App**](http://localhost:8080) | Open directly in any modern browser |
 
 ---
