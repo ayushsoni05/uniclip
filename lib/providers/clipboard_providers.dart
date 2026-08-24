@@ -77,17 +77,23 @@ final clipboardMonitorProvider = Provider<ClipboardMonitor>((ref) {
   final syncClient = ref.watch(syncClientProvider);
   final config = ref.watch(configProvider);
   final pairedDevices = ref.watch(pairedDevicesProvider);
+  final bridge = ref.watch(clipboardSyncBridgeProvider);
 
   final monitor = ClipboardMonitor(
     clipboardService: service,
     clipboardHistory: history,
     encryptContent: (content) async {
-      // Find the first paired device key, or derive shared key
+      // Use the first paired device's key for encryption.
+      // Both devices derived the same key from the shared secret + salt,
+      // so whichever device encrypts, the other can decrypt.
       List<int>? key;
       if (pairedDevices.isNotEmpty) {
         key = await keyManager.getKey(pairedDevices.first.deviceId);
       }
-      key ??= keyManager.deriveKey('global_clipboard_shared_key', [1, 2, 3, 4, 5, 6, 7, 8]);
+      if (key == null) {
+        debugPrint('ClipboardMonitor: No device key found, using fallback key');
+        key = keyManager.deriveKey('global_clipboard_shared_key', [1, 2, 3, 4, 5, 6, 7, 8]);
+      }
 
       final payload = crypto.encrypt(content, key);
       return jsonEncode(payload.toJson());
@@ -97,20 +103,27 @@ final clipboardMonitorProvider = Provider<ClipboardMonitor>((ref) {
         final json = jsonDecode(encryptedPayloadString) as Map<String, dynamic>;
         final payload = CryptoPayload.fromJson(json);
 
+        // Look up the sender's key first
         List<int>? key;
         if (senderDeviceId.isNotEmpty) {
           key = await keyManager.getKey(senderDeviceId);
         }
-        key ??= keyManager.deriveKey('global_clipboard_shared_key', [1, 2, 3, 4, 5, 6, 7, 8]);
+        if (key == null) {
+          debugPrint('ClipboardMonitor: No key for sender $senderDeviceId, using fallback');
+          key = keyManager.deriveKey('global_clipboard_shared_key', [1, 2, 3, 4, 5, 6, 7, 8]);
+        }
 
         return crypto.decrypt(payload, key);
       } catch (e) {
-        debugPrint('Decryption exception: $e');
+        debugPrint('ClipboardMonitor: Decryption exception: $e');
         return encryptedPayloadString;
       }
     },
     broadcastToPeers: (encrypted, hash) {
+      // Send via SyncClient to all outbound WebSocket connections
       syncClient.sendClipboardUpdate(encrypted, hash);
+      // Also broadcast via SyncServer to all inbound WebSocket connections
+      bridge.serverBroadcast?.call(encrypted, hash);
     },
     showPasteBanner: (deviceName) {
       BannerOverlayManager.instance.showPasteBanner(deviceName);
@@ -118,6 +131,13 @@ final clipboardMonitorProvider = Provider<ClipboardMonitor>((ref) {
     localDeviceId: config.deviceId ?? 'device-id',
     localDeviceName: config.deviceName ?? 'Global Clipboard',
   );
+
+  // *** CRITICAL FIX: Register this monitor as the handler for incoming
+  // clipboard data from both SyncServer and SyncClient ***
+  bridge.onRemoteClipboard = (encryptedPayload, senderId, senderName) {
+    debugPrint('Bridge: Routing clipboard from $senderName to ClipboardMonitor');
+    monitor.onRemoteClipboardReceived(encryptedPayload, senderId, senderName);
+  };
 
   ref.onDispose(() => monitor.stop());
   return monitor;

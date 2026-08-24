@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'crypto_service.dart';
 import 'key_manager.dart';
+import 'auth_service.dart';
 import '../data/models/paired_device.dart';
 
 /// Represents the data exchanged during the pairing process.
@@ -13,6 +14,7 @@ class PairingInfo {
   final String salt;
   final int port;
   final String ipAddress;
+  final int timestamp;
 
   PairingInfo({
     required this.deviceId,
@@ -21,6 +23,7 @@ class PairingInfo {
     required this.salt,
     required this.port,
     required this.ipAddress,
+    required this.timestamp,
   });
 
   Map<String, dynamic> toJson() => {
@@ -30,6 +33,7 @@ class PairingInfo {
         'salt': salt,
         'port': port,
         'ip_address': ipAddress,
+        'timestamp': timestamp,
       };
 
   factory PairingInfo.fromJson(Map<String, dynamic> json) {
@@ -41,8 +45,9 @@ class PairingInfo {
       throw const FormatException('Missing fields in Pairing Payload JSON');
     }
     
-    // Support backwards compatibility if salt is missing
+    // Support backwards compatibility if salt or timestamp is missing
     final salt = json['salt'] as String? ?? base64Encode(utf8.encode(json['shared_secret'] as String));
+    final timestamp = json['timestamp'] as int? ?? DateTime.now().millisecondsSinceEpoch;
 
     return PairingInfo(
       deviceId: json['device_id'] as String,
@@ -51,6 +56,7 @@ class PairingInfo {
       salt: salt,
       port: json['port'] as int,
       ipAddress: json['ip_address'] as String,
+      timestamp: timestamp,
     );
   }
 }
@@ -62,7 +68,7 @@ class PairingService {
 
   PairingService(this._cryptoService, this._keyManager);
 
-  /// Creates a JSON payload containing device info, shared secret, and deterministic salt.
+  /// Creates a JSON payload containing device info, shared secret, deterministic salt, and timestamp.
   String generatePairingPayload(String deviceId, String deviceName, int port, String ipAddress) {
     final sharedSecretBytes = _cryptoService.generateRandomBytes(32);
     final sharedSecret = base64Encode(sharedSecretBytes);
@@ -77,6 +83,7 @@ class PairingService {
       salt: salt,
       port: port,
       ipAddress: ipAddress,
+      timestamp: DateTime.now().millisecondsSinceEpoch,
     );
 
     return jsonEncode(info.toJson());
@@ -86,9 +93,16 @@ class PairingService {
   PairingInfo parsePairingPayload(String qrData) {
     try {
       final decoded = jsonDecode(qrData) as Map<String, dynamic>;
-      return PairingInfo.fromJson(decoded);
+      final info = PairingInfo.fromJson(decoded);
+
+      // Validate QR code age — reject if older than maxQrAge (5 min)
+      if (!AuthService.isTimestampValid(info.timestamp)) {
+        throw Exception('QR code has expired. Please refresh the QR code on the other device.');
+      }
+
+      return info;
     } catch (e) {
-      throw Exception('Invalid pairing QR data: $e');
+      throw Exception('Invalid or expired pairing QR data: $e');
     }
   }
 
@@ -142,6 +156,7 @@ class PairingService {
         'sourcePort': localPort,
         'sharedSecret': targetInfo.sharedSecret,
         'salt': targetInfo.salt,
+        'timestamp': DateTime.now().millisecondsSinceEpoch,
       });
 
       request.write(body);

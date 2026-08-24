@@ -23,12 +23,16 @@ class App {
     final config = container.read(configProvider);
     _log.info('Config loaded for device: ${config.deviceName} (${config.deviceId})');
 
-    // 1. Load paired devices
+    // 1. Load paired devices from storage
     final pairedNotifier = container.read(pairedDevicesProvider.notifier);
     await pairedNotifier.loadDevices();
 
-    // 2. Start mDNS Advertising and Discovery (Native Android / Windows only)
+    // 2. Initialize the ClipboardSyncBridge (just creates the instance)
+    container.read(clipboardSyncBridgeProvider);
+
+    // 3. Start platform-specific services (mDNS, WebSocket server, client)
     if (!kIsWeb) {
+      // 3a. Start mDNS Advertising and Discovery
       try {
         final discovery = container.read(discoveryServiceProvider);
         await discovery.startAdvertising(
@@ -41,15 +45,19 @@ class App {
         debugPrint('mDNS discovery error (non-fatal): $e');
       }
 
-      // 3. Start Sync WebSocket Server
+      // 3b. Start Sync WebSocket Server
       try {
         final server = container.read(syncServerProvider);
         await server.start();
+        debugPrint('SyncServer started on port ${config.port}');
       } catch (e) {
         debugPrint('Sync server start error (non-fatal): $e');
       }
 
-      // 4. Auto-connect Sync Client to any discovered peers
+      // 3c. Initialize SyncClient (reads the bridge, registers its callback)
+      container.read(syncClientProvider);
+
+      // 3d. Auto-connect SyncClient to any discovered paired peers
       try {
         final discovery = container.read(discoveryServiceProvider);
         final syncClient = container.read(syncClientProvider);
@@ -60,21 +68,28 @@ class App {
           }
         });
       } catch (e) {
-        debugPrint('Sync client error (non-fatal): $e');
+        debugPrint('Sync client auto-connect error (non-fatal): $e');
       }
     }
 
-    // 5. Start Clipboard Monitor
+    // 4. Start Clipboard Monitor — this MUST happen AFTER SyncServer and
+    //    SyncClient are initialized because the monitor registers itself
+    //    as the bridge handler for incoming clipboard data.
     try {
       final monitor = container.read(clipboardMonitorProvider);
       if (config.globalClipboardEnabled) {
         monitor.start();
+        debugPrint('ClipboardMonitor started (polling every 500ms)');
       }
     } catch (e) {
       debugPrint('Clipboard monitor error (non-fatal): $e');
     }
 
     _log.info('All Global Clipboard real-time services started successfully.');
+    debugPrint('=== Global Clipboard is LIVE ===');
+    debugPrint('  Device: ${config.deviceName} (${config.deviceId})');
+    debugPrint('  Port: ${config.port}');
+    debugPrint('  Paired devices: ${pairedNotifier.deviceCount}');
   }
 
   Future<void> stop() async {

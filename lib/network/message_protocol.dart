@@ -5,7 +5,10 @@ enum MessageType {
   pairingRequest,
   pairingResponse,
   heartbeat,
-  deviceInfo
+  deviceInfo,
+  authChallenge,
+  authResponse,
+  authSuccess,
 }
 
 class SyncMessage {

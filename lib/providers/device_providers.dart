@@ -54,6 +54,8 @@ class PairedDevicesNotifier extends StateNotifier<List<PairedDevice>> {
   bool isPaired(String deviceId) {
     return state.any((d) => d.deviceId == deviceId);
   }
+
+  int get deviceCount => state.length;
 }
 
 final pairedDevicesProvider =
