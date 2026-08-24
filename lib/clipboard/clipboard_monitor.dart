@@ -10,7 +10,7 @@ class ClipboardMonitor {
   final ClipboardHistory _clipboardHistory;
   
   final Future<String> Function(String content) encryptContent;
-  final Future<String> Function(String content) decryptContent;
+  final Future<String> Function(String content, String senderDeviceId) decryptContent;
   final void Function(String encryptedContent, String hash) broadcastToPeers;
   final void Function(String deviceName) showPasteBanner;
   final String localDeviceId;
@@ -76,7 +76,7 @@ class ClipboardMonitor {
     String senderDeviceId,
     String senderDeviceName,
   ) async {
-    final content = await decryptContent(encryptedContent);
+    final content = await decryptContent(encryptedContent, senderDeviceId);
     final hash = _computeHash(content);
 
     _lastRemoteHash = hash;

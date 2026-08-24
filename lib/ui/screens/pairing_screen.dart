@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,9 +5,12 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import '../../providers/clipboard_providers.dart';
 import '../../providers/device_providers.dart';
+import '../../providers/network_providers.dart';
+import '../../network/network_utils.dart';
+import '../../network/discovery_service.dart';
 import '../../core/config.dart';
 
-/// Pairing screen for scanning and displaying QR codes in real-time.
+/// Pairing screen for scanning and displaying QR codes with automatic two-way handshake.
 class PairingScreen extends ConsumerStatefulWidget {
   const PairingScreen({super.key});
 
@@ -22,12 +24,16 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
   bool _isProcessing = false;
   String _pairedDeviceName = '';
   String? _errorMessage;
+  String _localIp = '127.0.0.1';
+  String _qrPayload = '';
 
   MobileScannerController? _scannerController;
 
   @override
   void initState() {
     super.initState();
+    _initLocalIpAndQr();
+
     if (!kIsWeb) {
       _scannerController = MobileScannerController(
         detectionSpeed: DetectionSpeed.noDuplicates,
@@ -35,6 +41,26 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
         autoStart: false,
       );
     }
+  }
+
+  Future<void> _initLocalIpAndQr() async {
+    final ip = await NetworkUtils.getLocalIpAddress();
+    if (!mounted) return;
+
+    final config = ref.read(configProvider);
+    final pairingService = ref.read(pairingServiceProvider);
+
+    final payload = pairingService.generatePairingPayload(
+      config.deviceId ?? 'device-id',
+      config.deviceName ?? 'Global Clipboard',
+      config.port,
+      ip,
+    );
+
+    setState(() {
+      _localIp = ip;
+      _qrPayload = payload;
+    });
   }
 
   @override
@@ -64,14 +90,16 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
   @override
   Widget build(BuildContext context) {
     final config = ref.watch(configProvider);
-    final pairingService = ref.watch(pairingServiceProvider);
 
-    final qrPayload = pairingService.generatePairingPayload(
-      config.deviceId ?? 'device-id',
-      config.deviceName ?? 'Global Clipboard',
-      config.port,
-      kIsWeb ? '127.0.0.1' : (Platform.localHostname),
-    );
+    // Listen for incoming two-way remote pairing handshakes
+    ref.listen<dynamic>(recentPairingEventProvider, (prev, next) {
+      if (next != null && !_isPaired) {
+        setState(() {
+          _isPaired = true;
+          _pairedDeviceName = next.deviceName;
+        });
+      }
+    });
 
     return CupertinoPageScaffold(
       backgroundColor: CupertinoColors.systemGroupedBackground,
@@ -103,12 +131,12 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
                 ),
               ),
             ),
-            const SizedBox(height: 32),
+            const SizedBox(height: 24),
             Expanded(
               child: _isPaired
                   ? _buildSuccessView()
                   : (_segmentedControlValue == 0
-                      ? _buildShowQrView(config, qrPayload)
+                      ? _buildShowQrView(config)
                       : _buildScanQrView()),
             ),
           ],
@@ -117,7 +145,11 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
     );
   }
 
-  Widget _buildShowQrView(Config config, String qrPayload) {
+  Widget _buildShowQrView(Config config) {
+    if (_qrPayload.isEmpty) {
+      return const Center(child: CupertinoActivityIndicator());
+    }
+
     return SingleChildScrollView(
       child: Center(
         child: Padding(
@@ -139,7 +171,7 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
                   ],
                 ),
                 child: QrImageView(
-                  data: qrPayload,
+                  data: _qrPayload,
                   version: QrVersions.auto,
                   size: 220.0,
                   eyeStyle: const QrEyeStyle(
@@ -152,7 +184,7 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
                   ),
                 ),
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 20),
               Text(
                 config.deviceName ?? 'This Device',
                 style: const TextStyle(
@@ -160,9 +192,17 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 4),
+              Text(
+                'LAN IP: $_localIp : ${config.port}',
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: CupertinoColors.secondaryLabel,
+                ),
+              ),
+              const SizedBox(height: 12),
               const Text(
-                'Scan this QR code from your other device\nto establish an end-to-end encrypted connection.',
+                'Scan this QR code from your other device to connect.\nBoth devices will pair automatically in two-way sync.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: CupertinoColors.secondaryLabel,
@@ -184,15 +224,15 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
           padding: const EdgeInsets.all(24.0),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(CupertinoIcons.camera, size: 64, color: CupertinoColors.systemGrey),
-              const SizedBox(height: 16),
-              const Text(
+            children: const [
+              Icon(CupertinoIcons.camera, size: 64, color: CupertinoColors.systemGrey),
+              SizedBox(height: 16),
+              Text(
                 'QR Scanner available on Android & Windows',
                 style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
               ),
-              const SizedBox(height: 8),
-              const Text(
+              SizedBox(height: 8),
+              Text(
                 'On other devices, open Global Clipboard and scan this device\'s QR code.',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: CupertinoColors.secondaryLabel),
@@ -291,7 +331,17 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
               Container(
                 color: const Color(0x80000000),
                 child: const Center(
-                  child: CupertinoActivityIndicator(radius: 16, color: CupertinoColors.white),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      CupertinoActivityIndicator(radius: 16, color: CupertinoColors.white),
+                      SizedBox(height: 12),
+                      Text(
+                        'Connecting & Pairing...',
+                        style: TextStyle(color: CupertinoColors.white, fontWeight: FontWeight.w600),
+                      ),
+                    ],
+                  ),
                 ),
               ),
           ],
@@ -310,11 +360,36 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
     await _scannerController?.stop();
 
     try {
+      final config = ref.read(configProvider);
       final pairingService = ref.read(pairingServiceProvider);
+      final syncClient = ref.read(syncClientProvider);
+
       final pairingInfo = pairingService.parsePairingPayload(rawData);
       final pairedDevice = await pairingService.completePairing(pairingInfo);
 
+      // Save to local paired devices list
       ref.read(pairedDevicesProvider.notifier).addDevice(pairedDevice);
+
+      // Send Two-Way Handshake back to the target device
+      final localIp = await NetworkUtils.getLocalIpAddress();
+      final handshakeSuccess = await pairingService.sendPairingHandshake(
+        targetInfo: pairingInfo,
+        localDeviceId: config.deviceId ?? 'device-id',
+        localDeviceName: config.deviceName ?? 'Global Clipboard',
+        localPort: config.port,
+        localIpAddress: localIp,
+      );
+
+      debugPrint('Pairing handshake result: $handshakeSuccess');
+
+      // Immediately connect WebSocket client to the newly paired device
+      syncClient.connectToPeer(DiscoveredPeer(
+        deviceId: pairedDevice.deviceId,
+        deviceName: pairedDevice.deviceName,
+        ipAddress: pairedDevice.ipAddress ?? pairingInfo.ipAddress,
+        port: pairedDevice.port,
+        lastSeen: DateTime.now(),
+      ));
 
       if (mounted) {
         setState(() {
@@ -327,7 +402,7 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
       if (mounted) {
         setState(() {
           _isProcessing = false;
-          _errorMessage = 'Invalid QR code. Please try again.';
+          _errorMessage = 'Failed to pair: $e';
         });
       }
     }

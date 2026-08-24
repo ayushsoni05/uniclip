@@ -7,8 +7,11 @@ import 'device_detail_screen.dart';
 import '../../providers/device_providers.dart';
 import '../../providers/settings_providers.dart';
 import '../../providers/network_providers.dart';
+import '../../providers/clipboard_providers.dart';
 import '../../network/discovery_service.dart';
+import '../../network/network_utils.dart';
 import '../../data/models/paired_device.dart';
+import '../../core/config.dart';
 
 /// Main home screen for Global Clipboard with real-time state.
 class HomeScreen extends ConsumerWidget {
@@ -69,7 +72,7 @@ class HomeScreen extends ConsumerWidget {
                   ),
                 ),
               ),
-              _buildDiscoveredList(context, discoveredPeers, pairedDevices),
+              _buildDiscoveredList(context, ref, discoveredPeers, pairedDevices),
             ],
           ],
         ),
@@ -227,7 +230,7 @@ class HomeScreen extends ConsumerWidget {
                 leading: Icon(
                   device.deviceName.toLowerCase().contains('phone') ||
                           device.deviceName.toLowerCase().contains('android')
-                      ? CupertinoIcons.device_phone_portrait
+                       ? CupertinoIcons.device_phone_portrait
                       : CupertinoIcons.desktopcomputer,
                   color: CupertinoColors.activeBlue,
                 ),
@@ -259,7 +262,7 @@ class HomeScreen extends ConsumerWidget {
   }
 
   Widget _buildDiscoveredList(
-      BuildContext context, List<DiscoveredPeer> peers, List<PairedDevice> paired) {
+      BuildContext context, WidgetRef ref, List<DiscoveredPeer> peers, List<PairedDevice> paired) {
     final unpaired = peers
         .where((p) => !paired.any((pairedDev) => pairedDev.deviceId == p.deviceId))
         .toList();
@@ -291,10 +294,8 @@ class HomeScreen extends ConsumerWidget {
                     'Pair',
                     style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: CupertinoColors.white),
                   ),
-                  onPressed: () {
-                    Navigator.of(context).push(
-                      CupertinoPageRoute(builder: (context) => const PairingScreen()),
-                    );
+                  onPressed: () async {
+                    await _quickPairPeer(context, ref, peer);
                   },
                 ),
               ),
@@ -311,5 +312,72 @@ class HomeScreen extends ConsumerWidget {
         }).toList(),
       ),
     );
+  }
+
+  Future<void> _quickPairPeer(BuildContext context, WidgetRef ref, DiscoveredPeer peer) async {
+    try {
+      final config = ref.read(configProvider);
+      final pairingService = ref.read(pairingServiceProvider);
+      final syncClient = ref.read(syncClientProvider);
+
+      // Generate shared secret and salt for this peer handshake
+      final payloadString = pairingService.generatePairingPayload(
+        peer.deviceId,
+        peer.deviceName,
+        peer.port,
+        peer.ipAddress,
+      );
+
+      final pairingInfo = pairingService.parsePairingPayload(payloadString);
+      final pairedDevice = await pairingService.completePairing(pairingInfo);
+
+      // Save locally
+      ref.read(pairedDevicesProvider.notifier).addDevice(pairedDevice);
+
+      // Send Two-Way Handshake to the discovered peer
+      final localIp = await NetworkUtils.getLocalIpAddress();
+      await pairingService.sendPairingHandshake(
+        targetInfo: pairingInfo,
+        localDeviceId: config.deviceId ?? 'device-id',
+        localDeviceName: config.deviceName ?? 'Global Clipboard',
+        localPort: config.port,
+        localIpAddress: localIp,
+      );
+
+      // Connect sync client
+      syncClient.connectToPeer(peer);
+
+      if (context.mounted) {
+        showCupertinoDialog(
+          context: context,
+          builder: (ctx) => CupertinoAlertDialog(
+            title: const Text('Paired Successfully!'),
+            content: Text('Your device is now synced with ${peer.deviceName}.'),
+            actions: [
+              CupertinoDialogAction(
+                child: const Text('OK'),
+                onPressed: () => Navigator.of(ctx).pop(),
+              ),
+            ],
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        showCupertinoDialog(
+          context: context,
+          builder: (ctx) => CupertinoAlertDialog(
+            title: const Text('Pairing Failed'),
+            content: Text('Could not complete pairing with ${peer.deviceName}: $e'),
+            actions: [
+              CupertinoDialogAction(
+                child: const Text('OK'),
+                onPressed: () => Navigator.of(ctx).pop(),
+              ),
+            ],
+          ),
+        );
+      }
+    }
   }
 }

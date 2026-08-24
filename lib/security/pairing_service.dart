@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'crypto_service.dart';
 import 'key_manager.dart';
 import '../data/models/paired_device.dart';
@@ -8,6 +10,7 @@ class PairingInfo {
   final String deviceId;
   final String deviceName;
   final String sharedSecret;
+  final String salt;
   final int port;
   final String ipAddress;
 
@@ -15,6 +18,7 @@ class PairingInfo {
     required this.deviceId,
     required this.deviceName,
     required this.sharedSecret,
+    required this.salt,
     required this.port,
     required this.ipAddress,
   });
@@ -23,6 +27,7 @@ class PairingInfo {
         'device_id': deviceId,
         'device_name': deviceName,
         'shared_secret': sharedSecret,
+        'salt': salt,
         'port': port,
         'ip_address': ipAddress,
       };
@@ -36,34 +41,40 @@ class PairingInfo {
       throw const FormatException('Missing fields in Pairing Payload JSON');
     }
     
+    // Support backwards compatibility if salt is missing
+    final salt = json['salt'] as String? ?? base64Encode(utf8.encode(json['shared_secret'] as String));
+
     return PairingInfo(
       deviceId: json['device_id'] as String,
       deviceName: json['device_name'] as String,
       sharedSecret: json['shared_secret'] as String,
+      salt: salt,
       port: json['port'] as int,
       ipAddress: json['ip_address'] as String,
     );
   }
 }
 
-/// Service to handle device pairing and secure key exchange.
+/// Service to handle device pairing, deterministic key derivation, and 2-way network handshake.
 class PairingService {
   final CryptoService _cryptoService;
   final KeyManager _keyManager;
 
   PairingService(this._cryptoService, this._keyManager);
 
-  /// Creates a JSON payload containing device info and a randomly generated shared secret.
-  /// This string can be encoded into a QR code.
+  /// Creates a JSON payload containing device info, shared secret, and deterministic salt.
   String generatePairingPayload(String deviceId, String deviceName, int port, String ipAddress) {
-    // Generate a random 32-byte shared secret
     final sharedSecretBytes = _cryptoService.generateRandomBytes(32);
     final sharedSecret = base64Encode(sharedSecretBytes);
+
+    final saltBytes = _keyManager.generateSalt();
+    final salt = base64Encode(saltBytes);
 
     final info = PairingInfo(
       deviceId: deviceId,
       deviceName: deviceName,
       sharedSecret: sharedSecret,
+      salt: salt,
       port: port,
       ipAddress: ipAddress,
     );
@@ -81,18 +92,15 @@ class PairingService {
     }
   }
 
-  /// Completes the pairing process by deriving a secure key from the shared secret,
-  /// storing it, and creating a [PairedDevice] record.
+  /// Completes the pairing process by deriving a secure key using the shared secret and salt.
   Future<PairedDevice> completePairing(PairingInfo info) async {
     try {
-      // Generate salt and derive an encryption key from the shared secret asynchronously
-      final salt = _keyManager.generateSalt();
-      final key = await _keyManager.deriveKeyAsync(info.sharedSecret, salt);
+      final saltBytes = base64Decode(info.salt);
+      final key = await _keyManager.deriveKeyAsync(info.sharedSecret, saltBytes);
       
-      // Store the derived key securely
+      // Store the derived key securely for this device
       await _keyManager.storeKey(info.deviceId, key);
 
-      // Create and return the paired device entity
       final device = PairedDevice(
         deviceId: info.deviceId,
         deviceName: info.deviceName,
@@ -103,12 +111,48 @@ class PairingService {
         port: info.port,
       );
 
-      // NOTE: Additional steps to save `device` to the local database 
-      // (e.g., using a repository/DAO) should be handled by the caller or injected repository.
-
       return device;
     } catch (e) {
       throw Exception('Failed to complete pairing: $e');
+    }
+  }
+
+  /// Sends a two-way network handshake to the target device so that both devices pair automatically.
+  Future<bool> sendPairingHandshake({
+    required PairingInfo targetInfo,
+    required String localDeviceId,
+    required String localDeviceName,
+    required int localPort,
+    required String localIpAddress,
+  }) async {
+    try {
+      final client = HttpClient();
+      client.connectionTimeout = const Duration(seconds: 4);
+
+      final url = Uri.parse('http://${targetInfo.ipAddress}:${targetInfo.port}/api/pair');
+      debugPrint('Sending pairing handshake to $url');
+
+      final request = await client.postUrl(url);
+      request.headers.contentType = ContentType.json;
+
+      final body = jsonEncode({
+        'sourceDeviceId': localDeviceId,
+        'sourceDeviceName': localDeviceName,
+        'sourceIpAddress': localIpAddress,
+        'sourcePort': localPort,
+        'sharedSecret': targetInfo.sharedSecret,
+        'salt': targetInfo.salt,
+      });
+
+      request.write(body);
+      final response = await request.close();
+
+      final success = response.statusCode == HttpStatus.ok;
+      debugPrint('Pairing handshake response: ${response.statusCode} (success=$success)');
+      return success;
+    } catch (e) {
+      debugPrint('Error sending pairing handshake: $e');
+      return false;
     }
   }
 }

@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../clipboard/clipboard_service.dart';
 import '../clipboard/clipboard_monitor.dart';
@@ -9,6 +11,7 @@ import '../security/pairing_service.dart';
 import '../core/config.dart';
 import '../ui/overlays/banner_overlay.dart';
 import 'network_providers.dart';
+import 'device_providers.dart';
 
 final cryptoServiceProvider = Provider<CryptoService>((ref) {
   return CryptoService();
@@ -73,27 +76,37 @@ final clipboardMonitorProvider = Provider<ClipboardMonitor>((ref) {
   final keyManager = ref.watch(keyManagerProvider);
   final syncClient = ref.watch(syncClientProvider);
   final config = ref.watch(configProvider);
+  final pairedDevices = ref.watch(pairedDevicesProvider);
 
   final monitor = ClipboardMonitor(
     clipboardService: service,
     clipboardHistory: history,
     encryptContent: (content) async {
-      // Encrypt with first available paired device key or shared key
-      final key = keyManager.deriveKey('global_clipboard_default_passphrase', [1, 2, 3, 4]);
+      // Find the first paired device key, or derive shared key
+      List<int>? key;
+      if (pairedDevices.isNotEmpty) {
+        key = await keyManager.getKey(pairedDevices.first.deviceId);
+      }
+      key ??= keyManager.deriveKey('global_clipboard_shared_key', [1, 2, 3, 4, 5, 6, 7, 8]);
+
       final payload = crypto.encrypt(content, key);
-      return payload.ciphertext;
+      return jsonEncode(payload.toJson());
     },
-    decryptContent: (encryptedContent) async {
-      final key = keyManager.deriveKey('global_clipboard_default_passphrase', [1, 2, 3, 4]);
-      final payload = CryptoPayload(
-        iv: '',
-        ciphertext: encryptedContent,
-        tag: '',
-      );
+    decryptContent: (encryptedPayloadString, senderDeviceId) async {
       try {
+        final json = jsonDecode(encryptedPayloadString) as Map<String, dynamic>;
+        final payload = CryptoPayload.fromJson(json);
+
+        List<int>? key;
+        if (senderDeviceId.isNotEmpty) {
+          key = await keyManager.getKey(senderDeviceId);
+        }
+        key ??= keyManager.deriveKey('global_clipboard_shared_key', [1, 2, 3, 4, 5, 6, 7, 8]);
+
         return crypto.decrypt(payload, key);
-      } catch (_) {
-        return encryptedContent;
+      } catch (e) {
+        debugPrint('Decryption exception: $e');
+        return encryptedPayloadString;
       }
     },
     broadcastToPeers: (encrypted, hash) {
@@ -102,7 +115,7 @@ final clipboardMonitorProvider = Provider<ClipboardMonitor>((ref) {
     showPasteBanner: (deviceName) {
       BannerOverlayManager.instance.showPasteBanner(deviceName);
     },
-    localDeviceId: config.deviceId ?? 'device-local',
+    localDeviceId: config.deviceId ?? 'device-id',
     localDeviceName: config.deviceName ?? 'Global Clipboard',
   );
 

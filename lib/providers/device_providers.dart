@@ -60,3 +60,6 @@ final pairedDevicesProvider =
     StateNotifierProvider<PairedDevicesNotifier, List<PairedDevice>>((ref) {
   return PairedDevicesNotifier();
 });
+
+/// Exposes the most recent paired device event so PairingScreen can auto-close/confirm
+final recentPairingEventProvider = StateProvider<PairedDevice?>((ref) => null);
