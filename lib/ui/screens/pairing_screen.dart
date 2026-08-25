@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -29,12 +30,15 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
 
   MobileScannerController? _scannerController;
 
+  bool get _isCameraSupported =>
+      !kIsWeb && (Platform.isAndroid || Platform.isIOS || Platform.isMacOS);
+
   @override
   void initState() {
     super.initState();
     _initLocalIpAndQr();
 
-    if (!kIsWeb) {
+    if (_isCameraSupported) {
       _scannerController = MobileScannerController(
         detectionSpeed: DetectionSpeed.noDuplicates,
         facing: CameraFacing.back,
@@ -77,7 +81,7 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
         _isProcessing = false;
       });
 
-      if (!kIsWeb) {
+      if (_isCameraSupported) {
         if (value == 1 && !_isPaired) {
           _scannerController?.start();
         } else {
@@ -218,24 +222,24 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
   }
 
   Widget _buildScanQrView() {
-    if (kIsWeb) {
+    if (!_isCameraSupported) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24.0),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: const [
-              Icon(CupertinoIcons.camera, size: 64, color: CupertinoColors.systemGrey),
+              Icon(CupertinoIcons.qrcode_viewfinder, size: 64, color: CupertinoColors.activeBlue),
               SizedBox(height: 16),
               Text(
-                'QR Scanner available on Android & Windows',
-                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
+                'Scan from your Mobile Device',
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 17),
               ),
               SizedBox(height: 8),
               Text(
-                'On other devices, open Global Clipboard and scan this device\'s QR code.',
+                'Open Global Clipboard on your phone, select "Scan QR Code", and scan the code displayed on this PC\'s "Show QR Code" tab.\n\nBoth devices will pair automatically with two-way sync.',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: CupertinoColors.secondaryLabel),
+                style: TextStyle(color: CupertinoColors.secondaryLabel, height: 1.4),
               ),
             ],
           ),

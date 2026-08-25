@@ -17,22 +17,26 @@ void main() async {
 
   // Windows / Desktop: configure window size and behavior
   if (!kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
-    await windowManager.ensureInitialized();
+    try {
+      await windowManager.ensureInitialized();
 
-    const windowOptions = WindowOptions(
-      size: Size(400, 700),
-      minimumSize: Size(360, 600),
-      center: true,
-      backgroundColor: Color(0x00000000),
-      skipTaskbar: false,
-      titleBarStyle: TitleBarStyle.normal,
-      title: 'Global Clipboard',
-    );
+      const windowOptions = WindowOptions(
+        size: Size(400, 700),
+        minimumSize: Size(360, 600),
+        center: true,
+        backgroundColor: Color(0xFFF2F2F7),
+        skipTaskbar: false,
+        titleBarStyle: TitleBarStyle.normal,
+        title: 'Global Clipboard',
+      );
 
-    windowManager.waitUntilReadyToShow(windowOptions, () async {
-      await windowManager.show();
-      await windowManager.focus();
-    });
+      windowManager.waitUntilReadyToShow(windowOptions, () async {
+        await windowManager.show();
+        await windowManager.focus();
+      });
+    } catch (e) {
+      debugPrint('WindowManager initialization error: $e');
+    }
   }
 
   // Initialize configuration
