@@ -48,7 +48,8 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
   }
 
   Future<void> _initLocalIpAndQr() async {
-    final ip = await NetworkUtils.getLocalIpAddress();
+    final candidateIps = await NetworkUtils.getAllCandidateIpAddresses();
+    final primaryIp = candidateIps.isNotEmpty ? candidateIps.first : '127.0.0.1';
     if (!mounted) return;
 
     final config = ref.read(configProvider);
@@ -58,11 +59,12 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
       config.deviceId ?? 'device-id',
       config.deviceName ?? 'Global Clipboard',
       config.port,
-      ip,
+      primaryIp,
+      candidateIps: candidateIps,
     );
 
     setState(() {
-      _localIp = ip;
+      _localIp = primaryIp;
       _qrPayload = payload;
     });
   }
@@ -369,14 +371,10 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
       final syncClient = ref.read(syncClientProvider);
 
       final pairingInfo = pairingService.parsePairingPayload(rawData);
-      final pairedDevice = await pairingService.completePairing(pairingInfo);
 
-      // Save to local paired devices list
-      ref.read(pairedDevicesProvider.notifier).addDevice(pairedDevice);
-
-      // Send Two-Way Handshake back to the target device
+      // Send Two-Way Handshake back to the target device across candidate IPs
       final localIp = await NetworkUtils.getLocalIpAddress();
-      final handshakeSuccess = await pairingService.sendPairingHandshake(
+      final verifiedIp = await pairingService.sendPairingHandshake(
         targetInfo: pairingInfo,
         localDeviceId: config.deviceId ?? 'device-id',
         localDeviceName: config.deviceName ?? 'Global Clipboard',
@@ -384,13 +382,20 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
         localIpAddress: localIp,
       );
 
-      debugPrint('Pairing handshake result: $handshakeSuccess');
+      debugPrint('Pairing handshake result: verified working IP = $verifiedIp');
+
+      // Complete pairing with the verified working IP
+      final pairedDevice = await pairingService.completePairing(pairingInfo, verifiedIp: verifiedIp);
+
+      // Save to local paired devices list
+      ref.read(pairedDevicesProvider.notifier).addDevice(pairedDevice);
 
       // Immediately connect WebSocket client to the newly paired device
+      final targetIp = verifiedIp ?? pairedDevice.ipAddress ?? pairingInfo.ipAddress;
       syncClient.connectToPeer(DiscoveredPeer(
         deviceId: pairedDevice.deviceId,
         deviceName: pairedDevice.deviceName,
-        ipAddress: pairedDevice.ipAddress ?? pairingInfo.ipAddress,
+        ipAddress: targetIp,
         port: pairedDevice.port,
         lastSeen: DateTime.now(),
       ));

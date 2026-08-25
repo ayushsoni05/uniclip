@@ -250,11 +250,12 @@ class HomeScreen extends ConsumerWidget {
               CupertinoListTile(
                 title: Text(device.deviceName),
                 subtitle: Text(
-                  device.isActive ? 'Connected' : 'Offline',
+                  '${device.ipAddress ?? "LAN"} • ${device.isActive ? "Connected" : "Saved"}',
                   style: TextStyle(
                     color: device.isActive
                         ? CupertinoColors.activeGreen
                         : CupertinoColors.secondaryLabel,
+                    fontSize: 13,
                   ),
                 ),
                 leading: Icon(

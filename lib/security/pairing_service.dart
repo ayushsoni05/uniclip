@@ -14,6 +14,7 @@ class PairingInfo {
   final String salt;
   final int port;
   final String ipAddress;
+  final List<String> candidateIps;
   final int timestamp;
 
   PairingInfo({
@@ -23,6 +24,7 @@ class PairingInfo {
     required this.salt,
     required this.port,
     required this.ipAddress,
+    this.candidateIps = const [],
     required this.timestamp,
   });
 
@@ -33,6 +35,7 @@ class PairingInfo {
         'salt': salt,
         'port': port,
         'ip_address': ipAddress,
+        'candidate_ips': candidateIps,
         'timestamp': timestamp,
       };
 
@@ -45,9 +48,12 @@ class PairingInfo {
       throw const FormatException('Missing fields in Pairing Payload JSON');
     }
     
-    // Support backwards compatibility if salt or timestamp is missing
     final salt = json['salt'] as String? ?? base64Encode(utf8.encode(json['shared_secret'] as String));
     final timestamp = json['timestamp'] as int? ?? DateTime.now().millisecondsSinceEpoch;
+    final candidateIps = (json['candidate_ips'] as List<dynamic>?)
+            ?.map((e) => e.toString())
+            .toList() ??
+        [];
 
     return PairingInfo(
       deviceId: json['device_id'] as String,
@@ -56,25 +62,34 @@ class PairingInfo {
       salt: salt,
       port: json['port'] as int,
       ipAddress: json['ip_address'] as String,
+      candidateIps: candidateIps,
       timestamp: timestamp,
     );
   }
 }
 
-/// Service to handle device pairing, deterministic key derivation, and 2-way network handshake.
+/// Service to handle device pairing, deterministic key derivation, and multi-IP 2-way network handshake.
 class PairingService {
   final CryptoService _cryptoService;
   final KeyManager _keyManager;
 
   PairingService(this._cryptoService, this._keyManager);
 
-  /// Creates a JSON payload containing device info, shared secret, deterministic salt, and timestamp.
-  String generatePairingPayload(String deviceId, String deviceName, int port, String ipAddress) {
+  /// Creates a JSON payload containing device info, shared secret, deterministic salt, and candidate IPs.
+  String generatePairingPayload(
+    String deviceId,
+    String deviceName,
+    int port,
+    String primaryIp, {
+    List<String> candidateIps = const [],
+  }) {
     final sharedSecretBytes = _cryptoService.generateRandomBytes(32);
     final sharedSecret = base64Encode(sharedSecretBytes);
 
     final saltBytes = _keyManager.generateSalt();
     final salt = base64Encode(saltBytes);
+
+    final allIps = {primaryIp, ...candidateIps}.toList();
 
     final info = PairingInfo(
       deviceId: deviceId,
@@ -82,7 +97,8 @@ class PairingService {
       sharedSecret: sharedSecret,
       salt: salt,
       port: port,
-      ipAddress: ipAddress,
+      ipAddress: primaryIp,
+      candidateIps: allIps,
       timestamp: DateTime.now().millisecondsSinceEpoch,
     );
 
@@ -95,7 +111,6 @@ class PairingService {
       final decoded = jsonDecode(qrData) as Map<String, dynamic>;
       final info = PairingInfo.fromJson(decoded);
 
-      // Validate QR code age — reject if older than maxQrAge (5 min)
       if (!AuthService.isTimestampValid(info.timestamp)) {
         throw Exception('QR code has expired. Please refresh the QR code on the other device.');
       }
@@ -107,12 +122,11 @@ class PairingService {
   }
 
   /// Completes the pairing process by deriving a secure key using the shared secret and salt.
-  Future<PairedDevice> completePairing(PairingInfo info) async {
+  Future<PairedDevice> completePairing(PairingInfo info, {String? verifiedIp}) async {
     try {
       final saltBytes = base64Decode(info.salt);
       final key = await _keyManager.deriveKeyAsync(info.sharedSecret, saltBytes);
       
-      // Store the derived key securely for this device
       await _keyManager.storeKey(info.deviceId, key);
 
       final device = PairedDevice(
@@ -121,7 +135,7 @@ class PairingService {
         pairedAt: DateTime.now(),
         lastSeen: DateTime.now(),
         isActive: true,
-        ipAddress: info.ipAddress,
+        ipAddress: verifiedIp ?? info.ipAddress,
         port: info.port,
       );
 
@@ -131,43 +145,50 @@ class PairingService {
     }
   }
 
-  /// Sends a two-way network handshake to the target device so that both devices pair automatically.
-  Future<bool> sendPairingHandshake({
+  /// Sends a two-way network handshake trying candidate IPs in order.
+  /// Returns the verified working IP address upon success.
+  Future<String?> sendPairingHandshake({
     required PairingInfo targetInfo,
     required String localDeviceId,
     required String localDeviceName,
     required int localPort,
     required String localIpAddress,
   }) async {
-    try {
-      final client = HttpClient();
-      client.connectionTimeout = const Duration(seconds: 4);
+    final targets = {targetInfo.ipAddress, ...targetInfo.candidateIps}.toList();
 
-      final url = Uri.parse('http://${targetInfo.ipAddress}:${targetInfo.port}/api/pair');
-      debugPrint('Sending pairing handshake to $url');
+    for (final ip in targets) {
+      try {
+        final client = HttpClient();
+        client.connectionTimeout = const Duration(seconds: 3);
 
-      final request = await client.postUrl(url);
-      request.headers.contentType = ContentType.json;
+        final url = Uri.parse('http://$ip:${targetInfo.port}/api/pair');
+        debugPrint('Attempting pairing handshake to $url');
 
-      final body = jsonEncode({
-        'sourceDeviceId': localDeviceId,
-        'sourceDeviceName': localDeviceName,
-        'sourceIpAddress': localIpAddress,
-        'sourcePort': localPort,
-        'sharedSecret': targetInfo.sharedSecret,
-        'salt': targetInfo.salt,
-        'timestamp': DateTime.now().millisecondsSinceEpoch,
-      });
+        final request = await client.postUrl(url);
+        request.headers.contentType = ContentType.json;
 
-      request.write(body);
-      final response = await request.close();
+        final body = jsonEncode({
+          'sourceDeviceId': localDeviceId,
+          'sourceDeviceName': localDeviceName,
+          'sourceIpAddress': localIpAddress,
+          'sourcePort': localPort,
+          'sharedSecret': targetInfo.sharedSecret,
+          'salt': targetInfo.salt,
+          'timestamp': DateTime.now().millisecondsSinceEpoch,
+        });
 
-      final success = response.statusCode == HttpStatus.ok;
-      debugPrint('Pairing handshake response: ${response.statusCode} (success=$success)');
-      return success;
-    } catch (e) {
-      debugPrint('Error sending pairing handshake: $e');
-      return false;
+        request.write(body);
+        final response = await request.close();
+
+        if (response.statusCode == HttpStatus.ok) {
+          debugPrint('Pairing handshake succeeded with target IP: $ip');
+          return ip;
+        }
+      } catch (e) {
+        debugPrint('Pairing handshake attempt to $ip failed: $e');
+      }
     }
+
+    return null;
   }
 }

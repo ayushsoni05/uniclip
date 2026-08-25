@@ -2,9 +2,23 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 
 class NetworkUtils {
-  /// Resolves the actual LAN IPv4 address of this device (e.g., 192.168.x.x or 10.x.x.x).
+  static const List<String> _virtualKeywords = [
+    'warp', 'cloudflare', 'vpn', 'virtual', 'vbox', 'vmware',
+    'wsl', 'vethernet', 'tap', 'tun', 'ppp', 'pseudo', 'tailscale', 'zerotier'
+  ];
+
+  /// Resolves the actual physical LAN IPv4 address (e.g. Wi-Fi: 10.x.x.x or 192.168.x.x).
+  /// Excludes virtual adapters like Cloudflare WARP, WSL, VirtualBox, VMware.
   static Future<String> getLocalIpAddress() async {
-    if (kIsWeb) return '127.0.0.1';
+    final ips = await getAllCandidateIpAddresses();
+    return ips.isNotEmpty ? ips.first : '127.0.0.1';
+  }
+
+  /// Returns all valid physical LAN IPv4 addresses, sorted with Wi-Fi and Ethernet first.
+  static Future<List<String>> getAllCandidateIpAddresses() async {
+    if (kIsWeb) return ['127.0.0.1'];
+
+    final candidateIps = <String>[];
 
     try {
       final interfaces = await NetworkInterface.list(
@@ -12,37 +26,70 @@ class NetworkUtils {
         includeLoopback: false,
       );
 
-      // Prioritize standard private Wi-Fi / Ethernet subnets (192.168.x.x, 10.x.x.x, 172.16-31.x.x)
-      for (final interface in interfaces) {
-        for (final addr in interface.addresses) {
-          final ip = addr.address;
-          if (ip.startsWith('192.168.') || ip.startsWith('10.')) {
-            return ip;
-          }
-          if (ip.startsWith('172.')) {
-            final parts = ip.split('.');
-            if (parts.length >= 2) {
-              final second = int.tryParse(parts[1]) ?? 0;
-              if (second >= 16 && second <= 31) {
-                return ip;
+      // 1. First priority: Physical Wi-Fi & Ethernet interfaces
+      for (final iface in interfaces) {
+        final nameLower = iface.name.toLowerCase();
+        final isVirtual = _virtualKeywords.any((k) => nameLower.contains(k));
+        if (isVirtual) continue;
+
+        final isWifiOrEth = nameLower.contains('wi-fi') ||
+            nameLower.contains('wifi') ||
+            nameLower.contains('wlan') ||
+            nameLower.contains('ethernet') ||
+            nameLower.contains('eth') ||
+            nameLower.contains('en0') ||
+            nameLower.contains('lan');
+
+        if (isWifiOrEth) {
+          for (final addr in iface.addresses) {
+            final ip = addr.address;
+            if (!addr.isLoopback && !addr.isLinkLocal && !ip.startsWith('169.254.')) {
+              if (!candidateIps.contains(ip)) {
+                candidateIps.add(ip);
               }
             }
           }
         }
       }
 
-      // Fallback to first non-loopback IPv4 address
-      for (final interface in interfaces) {
-        for (final addr in interface.addresses) {
-          if (!addr.isLoopback && !addr.isLinkLocal) {
-            return addr.address;
+      // 2. Second priority: Other non-virtual physical interfaces with private IPs
+      for (final iface in interfaces) {
+        final nameLower = iface.name.toLowerCase();
+        final isVirtual = _virtualKeywords.any((k) => nameLower.contains(k));
+        if (isVirtual) continue;
+
+        for (final addr in iface.addresses) {
+          final ip = addr.address;
+          if (!addr.isLoopback && !addr.isLinkLocal && !ip.startsWith('169.254.')) {
+            if (!candidateIps.contains(ip)) {
+              candidateIps.add(ip);
+            }
+          }
+        }
+      }
+
+      // 3. Fallback: Any non-loopback IP if nothing found
+      if (candidateIps.isEmpty) {
+        for (final iface in interfaces) {
+          for (final addr in iface.addresses) {
+            final ip = addr.address;
+            if (!addr.isLoopback && !addr.isLinkLocal && !ip.startsWith('169.254.')) {
+              if (!candidateIps.contains(ip)) {
+                candidateIps.add(ip);
+              }
+            }
           }
         }
       }
     } catch (e) {
-      debugPrint('Error resolving local IP: $e');
+      debugPrint('Error resolving candidate LAN IPs: $e');
     }
 
-    return '127.0.0.1';
+    if (candidateIps.isEmpty) {
+      candidateIps.add('127.0.0.1');
+    }
+
+    debugPrint('NetworkUtils: Resolved LAN candidate IPs: $candidateIps');
+    return candidateIps;
   }
 }
