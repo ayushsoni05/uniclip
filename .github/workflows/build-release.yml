@@ -69,13 +69,13 @@ jobs:
       - name: Archive Windows Release
         shell: pwsh
         run: |
-          Compress-Archive -Path "build\windows\x64\runner\Release\*" -DestinationPath "UniClip-v1.0.0-Windows.zip"
+          Compress-Archive -Path "build\windows\x64\runner\Release\*" -DestinationPath "UniClip-Windows.zip"
 
       - name: Upload Windows Artifact
         uses: actions/upload-artifact@v4
         with:
           name: UniClip-Windows-Release
-          path: UniClip-v1.0.0-Windows.zip
+          path: UniClip-Windows.zip
 
   # Publish GitHub Release with binaries attached
   release:
@@ -99,22 +99,22 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.0
-          name: UniClip v1.0.0 - Cross-Platform Universal Clipboard
+          tag_name: ${{ github.ref_name }}
+          name: UniClip ${{ github.ref_name }} - Cross-Platform Universal Clipboard
           body: |
-            ## 🎉 UniClip v1.0.0 Release
+            ## 🎉 UniClip ${{ github.ref_name }} Release
 
             Instant, cross-platform clipboard synchronization like Apple's iOS Universal Clipboard for Android and Windows.
 
             ### 📥 Direct Downloads:
-            * 📱 **Android**: Download `app-release.apk` (or `UniClip-v1.0.0-Android.apk`) below and install directly.
-            * 💻 **Windows**: Download `UniClip-v1.0.0-Windows.zip` below, extract, and launch `global_clipboard.exe`.
+            * 📱 **Android**: Download `app-release.apk` below and install directly.
+            * 💻 **Windows**: Download `UniClip-Windows.zip` below, extract, and launch `global_clipboard.exe`.
 
-            ### ✨ Features:
-            * Zero-configuration LAN mDNS / Bonjour sync
-            * AES-256-GCM End-to-End Encryption
-            * Pixel-perfect iOS 17 Cupertino design with "Pasting from..." dropdown banner
-            * QR code pairing & full clipboard history
+            ### ✨ Upgrades in v1.1.0:
+            * **Direct IP Auto-Connect**: Automatic LAN WebSocket connections without relying on mDNS multicast filters
+            * **Android Background Service**: Native background clipboard listener and instant resume sync
+            * **Resilient Multi-Key Decryption**: Automatic key fallback across all paired devices
+            * **1-Tap Sync Now**: Manual trigger button in Quick Actions
           files: |
             release-assets/android/*
             release-assets/windows/*
