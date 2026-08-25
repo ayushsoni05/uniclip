@@ -103,17 +103,33 @@ final clipboardMonitorProvider = Provider<ClipboardMonitor>((ref) {
         final json = jsonDecode(encryptedPayloadString) as Map<String, dynamic>;
         final payload = CryptoPayload.fromJson(json);
 
-        // Look up the sender's key first
-        List<int>? key;
+        // 1. Try sender's key first
         if (senderDeviceId.isNotEmpty) {
-          key = await keyManager.getKey(senderDeviceId);
-        }
-        if (key == null) {
-          debugPrint('ClipboardMonitor: No key for sender $senderDeviceId, using fallback');
-          key = keyManager.deriveKey('global_clipboard_shared_key', [1, 2, 3, 4, 5, 6, 7, 8]);
+          final key = await keyManager.getKey(senderDeviceId);
+          if (key != null) {
+            try {
+              return crypto.decrypt(payload, key);
+            } catch (_) {}
+          }
         }
 
-        return crypto.decrypt(payload, key);
+        // 2. Try all paired devices' stored keys
+        for (final device in pairedDevices) {
+          final key = await keyManager.getKey(device.deviceId);
+          if (key != null) {
+            try {
+              return crypto.decrypt(payload, key);
+            } catch (_) {}
+          }
+        }
+
+        // 3. Fallback shared key
+        final fallbackKey = keyManager.deriveKey('global_clipboard_shared_key', [1, 2, 3, 4, 5, 6, 7, 8]);
+        try {
+          return crypto.decrypt(payload, fallbackKey);
+        } catch (_) {}
+
+        return encryptedPayloadString;
       } catch (e) {
         debugPrint('ClipboardMonitor: Decryption exception: $e');
         return encryptedPayloadString;

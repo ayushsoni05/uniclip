@@ -1,7 +1,7 @@
 /// App-wide constants for the Global Clipboard application.
 class AppConstants {
   static const String appName = 'Global Clipboard';
-  static const String appVersion = '1.0.0';
+  static const String appVersion = '1.1.0';
   
   // mDNS service configuration
   static const String serviceType = '_globalclip._tcp';

@@ -45,7 +45,7 @@ class HomeScreen extends ConsumerWidget {
           children: [
             _buildStatusCard(isEnabled, activeCount, pairedDevices.length),
             const SizedBox(height: 24),
-            _buildQuickActions(context),
+            _buildQuickActions(context, ref),
             const SizedBox(height: 24),
             const Padding(
               padding: EdgeInsets.only(left: 8.0, bottom: 8.0),
@@ -128,19 +128,21 @@ class HomeScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildQuickActions(BuildContext context) {
-    return Row(
+  Widget _buildQuickActions(BuildContext context, WidgetRef ref) {
+    return Column(
       children: [
-        Expanded(
-          child: CupertinoButton.filled(
+        SizedBox(
+          width: double.infinity,
+          child: CupertinoButton(
+            color: CupertinoColors.activeGreen,
             padding: const EdgeInsets.symmetric(vertical: 12),
             child: const Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(CupertinoIcons.qrcode, size: 20, color: CupertinoColors.white),
+                Icon(CupertinoIcons.arrow_2_circlepath, size: 20, color: CupertinoColors.white),
                 SizedBox(width: 8),
                 Text(
-                  'Pair Device',
+                  'Sync Clipboard Now',
                   style: TextStyle(
                     color: CupertinoColors.white,
                     fontSize: 16,
@@ -149,39 +151,67 @@ class HomeScreen extends ConsumerWidget {
                 ),
               ],
             ),
-            onPressed: () {
-              Navigator.of(context).push(
-                CupertinoPageRoute(builder: (context) => const PairingScreen()),
-              );
+            onPressed: () async {
+              await ref.read(clipboardServiceProvider).forceCheck();
             },
           ),
         ),
-        const SizedBox(width: 16),
-        Expanded(
-          child: CupertinoButton(
-            color: CupertinoColors.systemGrey5,
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            child: const Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(CupertinoIcons.clock, size: 20, color: CupertinoColors.activeBlue),
-                SizedBox(width: 8),
-                Text(
-                  'History',
-                  style: TextStyle(
-                    color: CupertinoColors.activeBlue,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                  ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: CupertinoButton.filled(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(CupertinoIcons.qrcode, size: 20, color: CupertinoColors.white),
+                    SizedBox(width: 8),
+                    Text(
+                      'Pair Device',
+                      style: TextStyle(
+                        color: CupertinoColors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
                 ),
-              ],
+                onPressed: () {
+                  Navigator.of(context).push(
+                    CupertinoPageRoute(builder: (context) => const PairingScreen()),
+                  );
+                },
+              ),
             ),
-            onPressed: () {
-              Navigator.of(context).push(
-                CupertinoPageRoute(builder: (context) => const HistoryScreen()),
-              );
-            },
-          ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: CupertinoButton(
+                color: CupertinoColors.systemGrey5,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(CupertinoIcons.clock, size: 20, color: CupertinoColors.activeBlue),
+                    SizedBox(width: 8),
+                    Text(
+                      'History',
+                      style: TextStyle(
+                        color: CupertinoColors.activeBlue,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+                onPressed: () {
+                  Navigator.of(context).push(
+                    CupertinoPageRoute(builder: (context) => const HistoryScreen()),
+                  );
+                },
+              ),
+            ),
+          ],
         ),
       ],
     );

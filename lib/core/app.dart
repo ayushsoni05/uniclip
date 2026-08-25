@@ -6,6 +6,7 @@ import 'config.dart';
 import '../providers/network_providers.dart';
 import '../providers/clipboard_providers.dart';
 import '../providers/device_providers.dart';
+import '../network/discovery_service.dart';
 
 final appProvider = Provider<App>((ref) {
   return App(ref.container);
@@ -14,6 +15,7 @@ final appProvider = Provider<App>((ref) {
 class App {
   final ProviderContainer container;
   final Logger _log = Logger('App');
+  Timer? _reconnectTimer;
 
   App(this.container);
 
@@ -27,7 +29,7 @@ class App {
     final pairedNotifier = container.read(pairedDevicesProvider.notifier);
     await pairedNotifier.loadDevices();
 
-    // 2. Initialize the ClipboardSyncBridge (just creates the instance)
+    // 2. Initialize the ClipboardSyncBridge
     container.read(clipboardSyncBridgeProvider);
 
     // 3. Start platform-specific services (mDNS, WebSocket server, client)
@@ -54,15 +56,18 @@ class App {
         debugPrint('Sync server start error (non-fatal): $e');
       }
 
-      // 3c. Initialize SyncClient (reads the bridge, registers its callback)
-      container.read(syncClientProvider);
+      // 3c. Initialize SyncClient
+      final syncClient = container.read(syncClientProvider);
 
-      // 3d. Auto-connect SyncClient to any discovered paired peers
+      // 3d. DIRECT IP AUTO-CONNECT (Crucial: Connect immediately without waiting for mDNS)
+      _connectToAllPairedDevices();
+
+      // 3e. Auto-connect when mDNS discovers paired peers (handles dynamic IP changes)
       try {
         final discovery = container.read(discoveryServiceProvider);
-        final syncClient = container.read(syncClientProvider);
         discovery.events.listen((event) {
           if (pairedNotifier.isPaired(event.peer.deviceId)) {
+            debugPrint('mDNS discovered paired peer: ${event.peer.deviceName} at ${event.peer.ipAddress}:${event.peer.port}');
             syncClient.connectToPeer(event.peer);
             pairedNotifier.updateLastSeen(event.peer.deviceId);
           }
@@ -70,16 +75,19 @@ class App {
       } catch (e) {
         debugPrint('Sync client auto-connect error (non-fatal): $e');
       }
+
+      // 3f. Persistent Keep-Alive Reconnect Loop (every 8 seconds)
+      _reconnectTimer = Timer.periodic(const Duration(seconds: 8), (_) {
+        _connectToAllPairedDevices();
+      });
     }
 
-    // 4. Start Clipboard Monitor — this MUST happen AFTER SyncServer and
-    //    SyncClient are initialized because the monitor registers itself
-    //    as the bridge handler for incoming clipboard data.
+    // 4. Start Clipboard Monitor
     try {
       final monitor = container.read(clipboardMonitorProvider);
       if (config.globalClipboardEnabled) {
         monitor.start();
-        debugPrint('ClipboardMonitor started (polling every 500ms)');
+        debugPrint('ClipboardMonitor started');
       }
     } catch (e) {
       debugPrint('Clipboard monitor error (non-fatal): $e');
@@ -92,8 +100,31 @@ class App {
     debugPrint('  Paired devices: ${pairedNotifier.deviceCount}');
   }
 
+  /// Connects SyncClient directly to all known paired devices using their stored IP addresses.
+  void _connectToAllPairedDevices() {
+    try {
+      final pairedDevices = container.read(pairedDevicesProvider);
+      final syncClient = container.read(syncClientProvider);
+
+      for (final device in pairedDevices) {
+        if (device.ipAddress != null && device.ipAddress!.isNotEmpty) {
+          syncClient.connectToPeer(DiscoveredPeer(
+            deviceId: device.deviceId,
+            deviceName: device.deviceName,
+            ipAddress: device.ipAddress!,
+            port: device.port,
+            lastSeen: device.lastSeen ?? DateTime.now(),
+          ));
+        }
+      }
+    } catch (e) {
+      debugPrint('Error in direct IP auto-connect: $e');
+    }
+  }
+
   Future<void> stop() async {
     _log.info('Stopping application services...');
+    _reconnectTimer?.cancel();
 
     try { container.read(clipboardMonitorProvider).stop(); } catch (_) {}
     try { await container.read(discoveryServiceProvider).stopAdvertising(); } catch (_) {}

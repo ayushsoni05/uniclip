@@ -1,5 +1,8 @@
 import 'dart:async';
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
 import 'package:crypto/crypto.dart';
 import 'dart:convert';
 
@@ -10,31 +13,86 @@ abstract class ClipboardService {
   Future<void> setText(String text);
   void addListener(void Function(String) onChanged);
   void removeListener(void Function(String) onChanged);
+  Future<void> forceCheck();
   void dispose();
 }
 
-class _DefaultClipboardService implements ClipboardService {
+class _DefaultClipboardService with WidgetsBindingObserver implements ClipboardService {
   Timer? _timer;
   String? _lastHash;
   final List<void Function(String)> _listeners = [];
+  static const MethodChannel _androidChannel = MethodChannel('com.globalclipboard/clipboard');
 
   _DefaultClipboardService() {
+    WidgetsBinding.instance.addObserver(this);
     _startPolling();
+    _initNativeAndroidChannels();
+  }
+
+  void _initNativeAndroidChannels() {
+    if (!kIsWeb && Platform.isAndroid) {
+      try {
+        _androidChannel.setMethodCallHandler((call) async {
+          if (call.method == 'onClipboardChanged') {
+            final text = call.arguments['text'] as String?;
+            if (text != null && text.isNotEmpty) {
+              _notifyListenersIfChanged(text);
+            }
+          }
+        });
+
+        // Start native clipboard listener & foreground service
+        _androidChannel.invokeMethod('startListening').catchError((e) {
+          debugPrint('Native clipboard startListening error: $e');
+        });
+        _androidChannel.invokeMethod('startForegroundService').catchError((e) {
+          debugPrint('Native clipboard startForegroundService error: $e');
+        });
+      } catch (e) {
+        debugPrint('Error initializing Android clipboard channel: $e');
+      }
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      debugPrint('App resumed: performing instant clipboard check');
+      forceCheck();
+    }
   }
 
   void _startPolling() {
-    _timer = Timer.periodic(const Duration(milliseconds: 500), (_) async {
+    _timer = Timer.periodic(const Duration(milliseconds: 400), (_) async {
+      await forceCheck();
+    });
+  }
+
+  @override
+  Future<void> forceCheck() async {
+    try {
       final text = await getText();
-      if (text != null) {
-        final hash = _computeHash(text);
-        if (hash != _lastHash) {
-          _lastHash = hash;
-          for (final listener in _listeners) {
-            listener(text);
-          }
+      if (text != null && text.isNotEmpty) {
+        _notifyListenersIfChanged(text);
+      }
+    } catch (e) {
+      // Ignore transient clipboard errors
+    }
+  }
+
+  void _notifyListenersIfChanged(String text) {
+    final hash = _computeHash(text);
+    if (hash != _lastHash) {
+      _lastHash = hash;
+      debugPrint('Local clipboard change detected: ${text.length > 30 ? '${text.substring(0, 30)}...' : text}');
+      for (final listener in List.of(_listeners)) {
+        try {
+          listener(text);
+        } catch (e) {
+          debugPrint('Error in clipboard listener: $e');
         }
       }
-    });
+    }
   }
 
   String _computeHash(String text) {
@@ -43,14 +101,27 @@ class _DefaultClipboardService implements ClipboardService {
 
   @override
   Future<String?> getText() async {
-    final data = await Clipboard.getData(Clipboard.kTextPlain);
-    return data?.text;
+    try {
+      final data = await Clipboard.getData(Clipboard.kTextPlain);
+      return data?.text;
+    } catch (e) {
+      return null;
+    }
   }
 
   @override
   Future<void> setText(String text) async {
-    await Clipboard.setData(ClipboardData(text: text));
-    _lastHash = _computeHash(text); // Prevent triggering our own listener
+    try {
+      _lastHash = _computeHash(text); // Set hash first to prevent echo
+      await Clipboard.setData(ClipboardData(text: text));
+
+      // Also update native Android clipboard if on Android
+      if (!kIsWeb && Platform.isAndroid) {
+        _androidChannel.invokeMethod('setClipboardText', {'text': text}).catchError((_) {});
+      }
+    } catch (e) {
+      debugPrint('Error setting clipboard text: $e');
+    }
   }
 
   @override
@@ -67,7 +138,12 @@ class _DefaultClipboardService implements ClipboardService {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _timer?.cancel();
     _listeners.clear();
+    if (!kIsWeb && Platform.isAndroid) {
+      _androidChannel.invokeMethod('stopListening').catchError((_) {});
+      _androidChannel.invokeMethod('stopForegroundService').catchError((_) {});
+    }
   }
 }
