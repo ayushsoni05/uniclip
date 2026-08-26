@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
@@ -8,7 +7,6 @@ import 'package:global_clipboard/security/pairing_service.dart';
 import 'package:global_clipboard/network/sync_server.dart';
 import 'package:global_clipboard/network/sync_client.dart';
 import 'package:global_clipboard/network/discovery_service.dart';
-import 'package:global_clipboard/network/message_protocol.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 void main() {

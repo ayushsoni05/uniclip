@@ -14,6 +14,7 @@ abstract class ClipboardService {
   void addListener(void Function(String) onChanged);
   void removeListener(void Function(String) onChanged);
   Future<void> forceCheck();
+  Future<bool> isAccessibilityEnabled();
   Future<void> openAccessibilitySettings();
   Future<void> openBatteryOptimizationSettings();
   void dispose();
@@ -124,6 +125,19 @@ class _DefaultClipboardService with WidgetsBindingObserver implements ClipboardS
     } catch (e) {
       debugPrint('Error setting clipboard text: $e');
     }
+  }
+
+  @override
+  Future<bool> isAccessibilityEnabled() async {
+    if (!kIsWeb && Platform.isAndroid) {
+      try {
+        final res = await _androidChannel.invokeMethod<bool>('isAccessibilityServiceEnabled');
+        return res ?? false;
+      } catch (e) {
+        return false;
+      }
+    }
+    return true;
   }
 
   @override

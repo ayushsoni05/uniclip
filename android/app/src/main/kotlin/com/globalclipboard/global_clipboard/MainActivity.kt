@@ -11,6 +11,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.text.TextUtils
 
 class MainActivity : FlutterActivity() {
     private val CLIPBOARD_CHANNEL = "com.globalclipboard/clipboard"
@@ -73,6 +74,14 @@ class MainActivity : FlutterActivity() {
                     stopClipboardForegroundService()
                     result.success(true)
                 }
+                "isAccessibilityServiceEnabled" -> {
+                    try {
+                        val enabled = isAccessibilityServiceEnabled()
+                        result.success(enabled)
+                    } catch (e: Exception) {
+                        result.success(false)
+                    }
+                }
                 "openAccessibilitySettings" -> {
                     try {
                         val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
@@ -102,6 +111,30 @@ class MainActivity : FlutterActivity() {
         }
     }
     
+    private fun isAccessibilityServiceEnabled(): Boolean {
+        try {
+            val expectedServiceName = "${packageName}/${ClipboardAccessibilityService::class.java.canonicalName}"
+            val enabledServicesSetting = Settings.Secure.getString(
+                contentResolver,
+                Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+            ) ?: return false
+            
+            val colonSplitter = TextUtils.SimpleStringSplitter(':')
+            colonSplitter.setString(enabledServicesSetting)
+            
+            while (colonSplitter.hasNext()) {
+                val componentName = colonSplitter.next()
+                if (componentName.equals(expectedServiceName, ignoreCase = true) ||
+                    componentName.contains(ClipboardAccessibilityService::class.java.simpleName, ignoreCase = true)) {
+                    return true
+                }
+            }
+        } catch (e: Exception) {
+            return false
+        }
+        return false
+    }
+
     private fun getClipboardText(): String? {
         val clip = clipboardManager?.primaryClip
         if (clip != null && clip.itemCount > 0) {

@@ -134,38 +134,67 @@ class HomeScreen extends ConsumerWidget {
     return Column(
       children: [
         if (!kIsWeb && Platform.isAndroid) ...[
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: const Color(0x1A007AFF),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0x4D007AFF)),
-            ),
-            child: Row(
-              children: [
-                const Icon(CupertinoIcons.sparkles, color: CupertinoColors.activeBlue, size: 22),
-                const SizedBox(width: 10),
-                const Expanded(
-                  child: Text(
-                    'Instant iOS-Style Sync',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: CupertinoColors.activeBlue,
-                    ),
+          Consumer(
+            builder: (context, ref, child) {
+              final statusAsync = ref.watch(accessibilityStatusProvider);
+              final isEnabled = statusAsync.value ?? false;
+
+              return Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                decoration: BoxDecoration(
+                  color: isEnabled ? const Color(0x1A34C759) : const Color(0x1AFF9500),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: isEnabled ? const Color(0x4D34C759) : const Color(0x4DFF9500),
                   ),
                 ),
-                CupertinoButton(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  color: CupertinoColors.activeBlue,
-                  borderRadius: BorderRadius.circular(16),
-                  onPressed: () {
-                    ref.read(clipboardServiceProvider).openAccessibilitySettings();
-                  },
-                  child: const Text('Setup', style: TextStyle(fontSize: 13, color: CupertinoColors.white)),
+                child: Row(
+                  children: [
+                    Icon(
+                      isEnabled ? CupertinoIcons.checkmark_circle_fill : CupertinoIcons.exclamationmark_circle_fill,
+                      color: isEnabled ? CupertinoColors.activeGreen : CupertinoColors.systemOrange,
+                      size: 22,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            isEnabled ? 'Background Sync Active' : 'Enable Background Sync',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: isEnabled ? CupertinoColors.activeGreen : CupertinoColors.systemOrange,
+                            ),
+                          ),
+                          Text(
+                            isEnabled
+                                ? 'Ready to copy & paste instantly'
+                                : 'Tap Setup to allow background copy',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: CupertinoColors.secondaryLabel,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (!isEnabled)
+                      CupertinoButton(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        color: CupertinoColors.systemOrange,
+                        borderRadius: BorderRadius.circular(16),
+                        onPressed: () async {
+                          await ref.read(clipboardServiceProvider).openAccessibilitySettings();
+                          ref.invalidate(accessibilityStatusProvider);
+                        },
+                        child: const Text('Setup', style: TextStyle(fontSize: 13, color: CupertinoColors.white)),
+                      ),
+                  ],
                 ),
-              ],
-            ),
+              );
+            },
           ),
           const SizedBox(height: 12),
         ],

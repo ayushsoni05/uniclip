@@ -158,3 +158,8 @@ final clipboardMonitorProvider = Provider<ClipboardMonitor>((ref) {
   ref.onDispose(() => monitor.stop());
   return monitor;
 });
+
+final accessibilityStatusProvider = FutureProvider.autoDispose<bool>((ref) async {
+  final service = ref.watch(clipboardServiceProvider);
+  return await service.isAccessibilityEnabled();
+});

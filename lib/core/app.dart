@@ -29,8 +29,13 @@ class App {
     final pairedNotifier = container.read(pairedDevicesProvider.notifier);
     await pairedNotifier.loadDevices();
 
-    // 2. Initialize the ClipboardSyncBridge
+    // 2. Initialize ClipboardSyncBridge and ClipboardMonitor
     container.read(clipboardSyncBridgeProvider);
+    final monitor = container.read(clipboardMonitorProvider);
+    if (config.globalClipboardEnabled) {
+      monitor.start();
+      debugPrint('ClipboardMonitor started and bound to bridge');
+    }
 
     // 3. Start platform-specific services (mDNS, WebSocket server, client)
     if (!kIsWeb) {
@@ -80,17 +85,6 @@ class App {
       _reconnectTimer = Timer.periodic(const Duration(seconds: 8), (_) {
         _connectToAllPairedDevices();
       });
-    }
-
-    // 4. Start Clipboard Monitor
-    try {
-      final monitor = container.read(clipboardMonitorProvider);
-      if (config.globalClipboardEnabled) {
-        monitor.start();
-        debugPrint('ClipboardMonitor started');
-      }
-    } catch (e) {
-      debugPrint('Clipboard monitor error (non-fatal): $e');
     }
 
     _log.info('All Global Clipboard real-time services started successfully.');
