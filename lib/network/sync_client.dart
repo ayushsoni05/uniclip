@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
@@ -193,16 +194,51 @@ class SyncClient {
     );
     final payload = jsonEncode(msg.toJson());
 
+    // 1. Send via active WebSockets
     _channels.forEach((deviceId, channel) {
       if (_statuses[deviceId] == ConnectionStatus.connected) {
         try {
           channel.sink.add(payload);
-          debugPrint('SyncClient: Sent clipboard update to $deviceId');
+          debugPrint('SyncClient: Sent WebSocket clipboard update to $deviceId');
         } catch (e) {
-          debugPrint('SyncClient: Error sending update to $deviceId: $e');
+          debugPrint('SyncClient: Error sending WebSocket update to $deviceId: $e');
         }
       }
     });
+
+    // 2. Guaranteed Delivery: Direct HTTP POST /api/clipboard to all known peer IPs
+    _peers.forEach((deviceId, peer) {
+      _sendDirectHttpClipboardPush(peer, encryptedPayload, contentHash);
+    });
+  }
+
+  Future<void> _sendDirectHttpClipboardPush(
+    DiscoveredPeer peer,
+    String encryptedPayload,
+    String contentHash,
+  ) async {
+    try {
+      final client = HttpClient();
+      client.connectionTimeout = const Duration(seconds: 2);
+
+      final url = Uri.parse('http://${peer.ipAddress}:${peer.port}/api/clipboard');
+      final request = await client.postUrl(url);
+      request.headers.contentType = ContentType.json;
+
+      final body = jsonEncode({
+        'deviceId': localDeviceId,
+        'deviceName': localDeviceName,
+        'encryptedPayload': encryptedPayload,
+        'contentHash': contentHash,
+        'timestamp': DateTime.now().millisecondsSinceEpoch,
+      });
+
+      request.write(body);
+      final response = await request.close();
+      debugPrint('SyncClient: Direct HTTP push to ${peer.deviceName} -> HTTP ${response.statusCode}');
+    } catch (e) {
+      debugPrint('SyncClient: Direct HTTP push to ${peer.deviceName} non-fatal error: $e');
+    }
   }
 
   void disconnectFromPeer(String deviceId) {

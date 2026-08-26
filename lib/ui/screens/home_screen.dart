@@ -1,3 +1,5 @@
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'settings_screen.dart';
@@ -131,32 +133,42 @@ class HomeScreen extends ConsumerWidget {
   Widget _buildQuickActions(BuildContext context, WidgetRef ref) {
     return Column(
       children: [
-        SizedBox(
-          width: double.infinity,
-          child: CupertinoButton(
-            color: CupertinoColors.activeGreen,
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            child: const Row(
-              mainAxisAlignment: MainAxisAlignment.center,
+        if (!kIsWeb && Platform.isAndroid) ...[
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0x1A007AFF),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0x4D007AFF)),
+            ),
+            child: Row(
               children: [
-                Icon(CupertinoIcons.arrow_2_circlepath, size: 20, color: CupertinoColors.white),
-                SizedBox(width: 8),
-                Text(
-                  'Sync Clipboard Now',
-                  style: TextStyle(
-                    color: CupertinoColors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
+                const Icon(CupertinoIcons.sparkles, color: CupertinoColors.activeBlue, size: 22),
+                const SizedBox(width: 10),
+                const Expanded(
+                  child: Text(
+                    'Instant iOS-Style Sync',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: CupertinoColors.activeBlue,
+                    ),
                   ),
+                ),
+                CupertinoButton(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  color: CupertinoColors.activeBlue,
+                  borderRadius: BorderRadius.circular(16),
+                  onPressed: () {
+                    ref.read(clipboardServiceProvider).openAccessibilitySettings();
+                  },
+                  child: const Text('Setup', style: TextStyle(fontSize: 13, color: CupertinoColors.white)),
                 ),
               ],
             ),
-            onPressed: () async {
-              await ref.read(clipboardServiceProvider).forceCheck();
-            },
           ),
-        ),
-        const SizedBox(height: 12),
+          const SizedBox(height: 12),
+        ],
         Row(
           children: [
             Expanded(
@@ -171,7 +183,7 @@ class HomeScreen extends ConsumerWidget {
                       'Pair Device',
                       style: TextStyle(
                         color: CupertinoColors.white,
-                        fontSize: 15,
+                        fontSize: 16,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
@@ -198,7 +210,7 @@ class HomeScreen extends ConsumerWidget {
                       'History',
                       style: TextStyle(
                         color: CupertinoColors.activeBlue,
-                        fontSize: 15,
+                        fontSize: 16,
                         fontWeight: FontWeight.w600,
                       ),
                     ),

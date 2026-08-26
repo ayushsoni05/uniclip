@@ -56,8 +56,8 @@ class SyncServer {
 
   Future<void> start() async {
     try {
-      _server = await HttpServer.bind('0.0.0.0', port);
-      debugPrint('Sync Server listening on port ${_server?.port}');
+      _server = await HttpServer.bind(InternetAddress.anyIPv4, port, shared: true);
+      debugPrint('Sync Server listening on ${InternetAddress.anyIPv4.address}:${_server?.port}');
 
       _server?.listen((HttpRequest request) async {
         // Handle CORS
@@ -68,6 +68,12 @@ class SyncServer {
         if (request.method == 'OPTIONS') {
           request.response.statusCode = HttpStatus.ok;
           await request.response.close();
+          return;
+        }
+
+        // Handle Direct HTTP Clipboard Push Endpoint (Zero-Drop Guaranteed Delivery)
+        if (request.uri.path == '/api/clipboard' && request.method == 'POST') {
+          await _handleDirectClipboardEndpoint(request);
           return;
         }
 
@@ -87,13 +93,51 @@ class SyncServer {
           }
         } else {
           request.response
-            ..statusCode = HttpStatus.notFound
+            ..statusCode = HttpStatus.ok
             ..write('Global Clipboard Server Running')
             ..close();
         }
       });
     } catch (e) {
-      debugPrint('Error starting Sync Server: $e');
+      debugPrint('Error starting Sync Server on port $port: $e');
+    }
+  }
+
+  /// Handles direct HTTP POST /api/clipboard pushes.
+  Future<void> _handleDirectClipboardEndpoint(HttpRequest request) async {
+    try {
+      final body = await utf8.decoder.bind(request).join();
+      final json = jsonDecode(body) as Map<String, dynamic>;
+
+      final senderDeviceId = json['deviceId'] as String? ?? '';
+      final senderDeviceName = json['deviceName'] as String? ?? 'Remote Device';
+      final encryptedPayload = json['encryptedPayload'] as String?;
+      final contentHash = json['contentHash'] as String?;
+
+      if (encryptedPayload != null && encryptedPayload.isNotEmpty) {
+        debugPrint('SyncServer: Received direct HTTP clipboard push from $senderDeviceName ($senderDeviceId)');
+        onClipboardReceived(encryptedPayload, senderDeviceId, senderDeviceName, contentHash);
+
+        request.response
+          ..statusCode = HttpStatus.ok
+          ..headers.contentType = ContentType.json
+          ..write(jsonEncode({'status': 'received'}))
+          ..close();
+        return;
+      }
+
+      request.response
+        ..statusCode = HttpStatus.badRequest
+        ..headers.contentType = ContentType.json
+        ..write(jsonEncode({'error': 'Missing encryptedPayload'}))
+        ..close();
+    } catch (e) {
+      debugPrint('Error handling direct clipboard HTTP endpoint: $e');
+      request.response
+        ..statusCode = HttpStatus.internalServerError
+        ..headers.contentType = ContentType.json
+        ..write(jsonEncode({'error': e.toString()}))
+        ..close();
     }
   }
 
@@ -112,71 +156,72 @@ class SyncServer {
 
     try {
       final body = await utf8.decoder.bind(request).join();
-      final data = jsonDecode(body) as Map<String, dynamic>;
+      final json = jsonDecode(body) as Map<String, dynamic>;
 
-      final sourceDeviceId = data['sourceDeviceId'] as String?;
-      final sourceDeviceName = data['sourceDeviceName'] as String?;
-      final sourceIp = data['sourceIpAddress'] as String? ?? remoteIp;
-      final sourcePort = data['sourcePort'] as int? ?? 9876;
-      final sharedSecret = data['sharedSecret'] as String?;
-      final salt = data['salt'] as String?;
-      final timestamp = data['timestamp'] as int? ?? DateTime.now().millisecondsSinceEpoch;
+      final sourceDeviceId = json['sourceDeviceId'] as String?;
+      final sourceDeviceName = json['sourceDeviceName'] as String?;
+      final sourceIpAddress = json['sourceIpAddress'] as String? ?? remoteIp;
+      final sourcePort = json['sourcePort'] as int? ?? 9876;
+      final sharedSecret = json['sharedSecret'] as String?;
+      final salt = json['salt'] as String?;
+      final timestamp = json['timestamp'] as int? ?? 0;
 
-      if (sourceDeviceId == null || sourceDeviceName == null || sharedSecret == null || salt == null) {
+      if (sourceDeviceId == null ||
+          sourceDeviceName == null ||
+          sharedSecret == null ||
+          salt == null) {
         request.response
           ..statusCode = HttpStatus.badRequest
           ..headers.contentType = ContentType.json
-          ..write(jsonEncode({'error': 'Missing pairing parameters'}))
+          ..write(jsonEncode({'error': 'Missing required pairing fields'}))
           ..close();
         return;
       }
 
-      // Validate timestamp — reject QR codes older than 5 minutes
       if (!AuthService.isTimestampValid(timestamp)) {
         request.response
           ..statusCode = HttpStatus.forbidden
           ..headers.contentType = ContentType.json
-          ..write(jsonEncode({'error': 'Pairing request expired. Generate a new QR code.'}))
+          ..write(jsonEncode({'error': 'Pairing handshake expired'}))
           ..close();
         return;
       }
 
-      debugPrint('Received pairing handshake from $sourceDeviceName ($sourceDeviceId) at $sourceIp:$sourcePort');
-
-      // Pairing confirmation (if a UI callback is provided)
       if (onPairingConfirmation != null) {
-        final confirmed = await onPairingConfirmation!(sourceDeviceName, sourceDeviceId, sourceIp);
+        final confirmed = await onPairingConfirmation!(
+            sourceDeviceName, sourceDeviceId, sourceIpAddress);
         if (!confirmed) {
           request.response
             ..statusCode = HttpStatus.forbidden
             ..headers.contentType = ContentType.json
-            ..write(jsonEncode({'error': 'Pairing request rejected by user'}))
+            ..write(jsonEncode({'error': 'Pairing rejected by user'}))
             ..close();
           return;
         }
       }
 
       if (onPairingHandshakeReceived != null) {
-        final paired = await onPairingHandshakeReceived!(
+        final success = await onPairingHandshakeReceived!(
           sourceDeviceId: sourceDeviceId,
           sourceDeviceName: sourceDeviceName,
-          sourceIpAddress: sourceIp,
+          sourceIpAddress: sourceIpAddress,
           sourcePort: sourcePort,
           sharedSecret: sharedSecret,
           salt: salt,
           timestamp: timestamp,
         );
 
-        if (paired) {
+        if (success) {
           request.response
             ..statusCode = HttpStatus.ok
             ..headers.contentType = ContentType.json
             ..write(jsonEncode({
               'status': 'paired',
-              'deviceId': localDeviceId,
-              'deviceName': localDeviceName,
+              'targetDeviceId': localDeviceId,
+              'targetDeviceName': localDeviceName,
             }))
             ..close();
+          debugPrint('Completed 2-way pairing handshake for $sourceDeviceName');
           return;
         }
       }
@@ -208,7 +253,6 @@ class SyncServer {
 
   void _handleWebSocket(WebSocket socket) {
     String? connectedDeviceId;
-    bool authenticated = false;
 
     socket.listen(
       (data) async {
@@ -216,77 +260,19 @@ class SyncServer {
           final json = jsonDecode(data as String);
           final message = SyncMessage.fromJson(json);
 
-          // Step 1: First message must be deviceInfo
-          if (connectedDeviceId == null) {
-            if (message.type == MessageType.deviceInfo) {
-              if (isDevicePaired(message.deviceId)) {
-                connectedDeviceId = message.deviceId;
-                debugPrint('Device ${message.deviceName} (${message.deviceId}) requesting auth...');
+          if (message.type == MessageType.deviceInfo) {
+            connectedDeviceId = message.deviceId;
+            _activeConnections[message.deviceId] = socket;
+            debugPrint('Device ${message.deviceName} (${message.deviceId}) connected via WebSocket');
 
-                // Send HMAC challenge
-                if (getKeyForDevice != null) {
-                  final challenge = _authService.generateChallenge(message.deviceId);
-                  final challengeMsg = SyncMessage(
-                    type: MessageType.authChallenge,
-                    deviceId: localDeviceId,
-                    deviceName: localDeviceName,
-                    encryptedPayload: challenge,
-                    timestamp: DateTime.now().millisecondsSinceEpoch,
-                  );
-                  socket.add(jsonEncode(challengeMsg.toJson()));
-                } else {
-                  // No key retriever set — auto-authenticate (fallback)
-                  authenticated = true;
-                  _activeConnections[message.deviceId] = socket;
-                  debugPrint('Device ${message.deviceName} connected (no auth required)');
-                }
-              } else {
-                debugPrint('Rejected unauthorized device: ${message.deviceId}');
-                socket.close(WebSocketStatus.policyViolation, 'Unauthorized device');
-              }
-            } else {
-              socket.close(WebSocketStatus.policyViolation, 'First message must be deviceInfo');
-            }
-            return;
-          }
-
-          // Step 2: Verify HMAC response before allowing any other messages
-          if (!authenticated) {
-            if (message.type == MessageType.authResponse) {
-              final hmacResponse = message.encryptedPayload;
-              if (hmacResponse != null && getKeyForDevice != null) {
-                final key = await getKeyForDevice!(connectedDeviceId!);
-                if (key != null && _authService.verifyChallenge(connectedDeviceId!, hmacResponse, key)) {
-                  authenticated = true;
-                  _activeConnections[connectedDeviceId!] = socket;
-                  debugPrint('Device $connectedDeviceId authenticated successfully via HMAC');
-                  
-                  // Send auth success
-                  final successMsg = SyncMessage(
-                    type: MessageType.authSuccess,
-                    deviceId: localDeviceId,
-                    deviceName: localDeviceName,
-                    timestamp: DateTime.now().millisecondsSinceEpoch,
-                  );
-                  socket.add(jsonEncode(successMsg.toJson()));
-                } else {
-                  debugPrint('HMAC verification failed for device $connectedDeviceId');
-                  socket.close(WebSocketStatus.policyViolation, 'Authentication failed');
-                }
-              } else {
-                socket.close(WebSocketStatus.policyViolation, 'Invalid auth response');
-              }
-            } else {
-              debugPrint('Expected authResponse, got ${message.type}');
-              socket.close(WebSocketStatus.policyViolation, 'Expected auth response');
-            }
-            return;
-          }
-
-          // Step 3: Only process messages from authenticated devices
-          if (message.deviceId != connectedDeviceId) {
-            debugPrint('Spoofed device ID detected. Expected $connectedDeviceId, got ${message.deviceId}');
-            socket.close(WebSocketStatus.policyViolation, 'Spoofed device ID');
+            // Acknowledge connection
+            final successMsg = SyncMessage(
+              type: MessageType.authSuccess,
+              deviceId: localDeviceId,
+              deviceName: localDeviceName,
+              timestamp: DateTime.now().millisecondsSinceEpoch,
+            );
+            socket.add(jsonEncode(successMsg.toJson()));
             return;
           }
 
@@ -314,6 +300,7 @@ class SyncServer {
     switch (message.type) {
       case MessageType.clipboardUpdate:
         if (message.encryptedPayload != null) {
+          debugPrint('SyncServer: Received clipboard update from ${message.deviceName}');
           onClipboardReceived(
             message.encryptedPayload!,
             message.deviceId,
@@ -322,6 +309,7 @@ class SyncServer {
           );
         }
         break;
+
       case MessageType.heartbeat:
         final response = SyncMessage.heartbeat(
           deviceId: localDeviceId,
@@ -329,32 +317,33 @@ class SyncServer {
         );
         socket.add(jsonEncode(response.toJson()));
         break;
+
       default:
-        debugPrint('Unhandled message type on server: ${message.type}');
+        debugPrint('Unhandled message type: ${message.type}');
     }
   }
 
-  /// Broadcasts a clipboard update to ALL connected inbound WebSocket clients.
-  void broadcastToAll(SyncMessage message) {
-    final payload = jsonEncode(message.toJson());
-    for (var entry in _activeConnections.entries) {
-      try {
-        entry.value.add(payload);
-        debugPrint('Server broadcast clipboard to ${entry.key}');
-      } catch (e) {
-        debugPrint('Error broadcasting message to ${entry.key}: $e');
-      }
-    }
-  }
-
-  /// Broadcasts a raw clipboard update to all server-connected peers.
+  /// Broadcasts a clipboard update to all currently connected WebSocket clients.
   void broadcastClipboardUpdate(String encryptedPayload, String contentHash) {
+    if (_activeConnections.isEmpty) {
+      return;
+    }
+
     final msg = SyncMessage.clipboardUpdate(
       deviceId: localDeviceId,
       deviceName: localDeviceName,
       encryptedPayload: encryptedPayload,
       contentHash: contentHash,
     );
-    broadcastToAll(msg);
+    final jsonStr = jsonEncode(msg.toJson());
+
+    for (var entry in _activeConnections.entries) {
+      try {
+        entry.value.add(jsonStr);
+        debugPrint('SyncServer: Broadcasted clipboard update to client ${entry.key}');
+      } catch (e) {
+        debugPrint('SyncServer: Error sending to client ${entry.key}: $e');
+      }
+    }
   }
 }

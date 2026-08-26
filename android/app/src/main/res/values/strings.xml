@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Global Clipboard</string>
+    <string name="accessibility_service_description">Enables real-time background clipboard synchronization with your PC.</string>
+</resources>

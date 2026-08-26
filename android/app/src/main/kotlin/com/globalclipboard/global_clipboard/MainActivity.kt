@@ -7,8 +7,10 @@ import android.content.ClipboardManager
 import android.content.ClipData
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 
 class MainActivity : FlutterActivity() {
     private val CLIPBOARD_CHANNEL = "com.globalclipboard/clipboard"
@@ -17,13 +19,25 @@ class MainActivity : FlutterActivity() {
     private var clipboardListener: ClipboardManager.OnPrimaryClipChangedListener? = null
     private var lastClipboardContent: String? = null
 
+    companion object {
+        var onGlobalClipboardChanged: ((String) -> Unit)? = null
+    }
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         
         clipboardManager = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        
         clipboardMethodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CLIPBOARD_CHANNEL)
         
+        onGlobalClipboardChanged = { text ->
+            runOnUiThread {
+                if (text != lastClipboardContent) {
+                    lastClipboardContent = text
+                    clipboardMethodChannel?.invokeMethod("onClipboardChanged", mapOf("text" to text))
+                }
+            }
+        }
+
         clipboardMethodChannel?.setMethodCallHandler { call, result ->
             when (call.method) {
                 "getClipboardText" -> {
@@ -59,6 +73,30 @@ class MainActivity : FlutterActivity() {
                     stopClipboardForegroundService()
                     result.success(true)
                 }
+                "openAccessibilitySettings" -> {
+                    try {
+                        val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+                            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                        }
+                        startActivity(intent)
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("SETTINGS_ERROR", e.message, null)
+                    }
+                }
+                "openBatteryOptimizationSettings" -> {
+                    try {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                            val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).apply {
+                                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                            }
+                            startActivity(intent)
+                        }
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("SETTINGS_ERROR", e.message, null)
+                    }
+                }
                 else -> result.notImplemented()
             }
         }
@@ -80,7 +118,7 @@ class MainActivity : FlutterActivity() {
     }
     
     private fun startClipboardListening() {
-        stopClipboardListening() // Remove any existing listener
+        stopClipboardListening()
         clipboardListener = ClipboardManager.OnPrimaryClipChangedListener {
             val currentText = getClipboardText()
             if (currentText != null && currentText != lastClipboardContent) {
@@ -114,6 +152,7 @@ class MainActivity : FlutterActivity() {
     
     override fun onDestroy() {
         stopClipboardListening()
+        onGlobalClipboardChanged = null
         super.onDestroy()
     }
 }

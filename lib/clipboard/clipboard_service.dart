@@ -14,6 +14,8 @@ abstract class ClipboardService {
   void addListener(void Function(String) onChanged);
   void removeListener(void Function(String) onChanged);
   Future<void> forceCheck();
+  Future<void> openAccessibilitySettings();
+  Future<void> openBatteryOptimizationSettings();
   void dispose();
 }
 
@@ -63,7 +65,7 @@ class _DefaultClipboardService with WidgetsBindingObserver implements ClipboardS
   }
 
   void _startPolling() {
-    _timer = Timer.periodic(const Duration(milliseconds: 400), (_) async {
+    _timer = Timer.periodic(const Duration(milliseconds: 250), (_) async {
       await forceCheck();
     });
   }
@@ -121,6 +123,28 @@ class _DefaultClipboardService with WidgetsBindingObserver implements ClipboardS
       }
     } catch (e) {
       debugPrint('Error setting clipboard text: $e');
+    }
+  }
+
+  @override
+  Future<void> openAccessibilitySettings() async {
+    if (!kIsWeb && Platform.isAndroid) {
+      try {
+        await _androidChannel.invokeMethod('openAccessibilitySettings');
+      } catch (e) {
+        debugPrint('Error opening accessibility settings: $e');
+      }
+    }
+  }
+
+  @override
+  Future<void> openBatteryOptimizationSettings() async {
+    if (!kIsWeb && Platform.isAndroid) {
+      try {
+        await _androidChannel.invokeMethod('openBatteryOptimizationSettings');
+      } catch (e) {
+        debugPrint('Error opening battery optimization settings: $e');
+      }
     }
   }
 
