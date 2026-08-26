@@ -1,8 +1,5 @@
-import 'dart:io';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:window_manager/window_manager.dart';
 
 import 'core/config.dart';
 import 'core/app.dart';
@@ -14,30 +11,6 @@ final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
-  // Windows / Desktop: configure window size and behavior
-  if (!kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
-    try {
-      await windowManager.ensureInitialized();
-
-      const windowOptions = WindowOptions(
-        size: Size(400, 700),
-        minimumSize: Size(360, 600),
-        center: true,
-        backgroundColor: Color(0xFFF2F2F7),
-        skipTaskbar: false,
-        titleBarStyle: TitleBarStyle.normal,
-        title: 'Global Clipboard',
-      );
-
-      windowManager.waitUntilReadyToShow(windowOptions, () async {
-        await windowManager.show();
-        await windowManager.focus();
-      });
-    } catch (e) {
-      debugPrint('WindowManager initialization error: $e');
-    }
-  }
 
   // Initialize configuration
   final config = await Config.init();
@@ -52,7 +25,6 @@ void main() async {
   );
 
   // Start all real-time background services (mDNS, SyncServer, SyncClient, ClipboardMonitor)
-  // Wrap in try-catch so startup errors don't crash the app
   try {
     final app = container.read(appProvider);
     await app.start();
